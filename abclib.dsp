@@ -691,6 +691,10 @@ SOURCE=.\src\base\io\ioWriteGml.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\src\base\io\ioWriteHMetis.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\src\base\io\ioWriteList.c
 # End Source File
 # Begin Source File
@@ -4111,6 +4115,10 @@ SOURCE=.\src\misc\util\utilBridge.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\src\misc\util\utilBSet.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\src\misc\util\utilCex.c
 # End Source File
 # Begin Source File
@@ -5204,6 +5212,10 @@ SOURCE=.\src\aig\gia\giaRetime.c
 # Begin Source File
 
 SOURCE=.\src\aig\gia\giaRex.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\src\aig\gia\giaRrr.cpp
 # End Source File
 # Begin Source File
 
