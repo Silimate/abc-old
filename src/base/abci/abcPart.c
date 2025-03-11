@@ -21,6 +21,7 @@
 #include "base/abc/abc.h"
 #include "base/main/main.h"
 #include "base/cmd/cmd.h"
+#include "map/mio/mio.h"
 
 #ifdef WIN32
 #include <process.h> 
@@ -1284,13 +1285,18 @@ typedef struct StochSynData_t_
     int          TimeOut;
 } StochSynData_t;
 
-Abc_Ntk_t * Abc_NtkStochProcessOne( Abc_Ntk_t * p, char * pScript, int Rand, int TimeSecs )
+Abc_Ntk_t * Abc_NtkStochProcessOne( Abc_Ntk_t * p, char * pScript0, int Rand, int TimeSecs )
 {
+    extern int Abc_NtkWriteToFile( char * pFileName, Abc_Ntk_t * pNtk );
+    extern Abc_Ntk_t * Abc_NtkReadFromFile( char * pFileName );
     Abc_Ntk_t * pNew, * pTemp;
-    char FileName[100], Command[1000];
-    sprintf( FileName, "%06x.blif", Rand );
-    Io_WriteBlif( p, FileName, 0, 0, 0 );
-    sprintf( Command, "./abc -q \"read %s; %s; write %s\"", FileName, pScript, FileName );
+    char FileName[100], Command[1000], PreCommand[500] = {0};
+    char * pLibFileName = Abc_NtkIsMappedLogic(p) ? Mio_LibraryReadFileName((Mio_Library_t *)p->pManFunc) : NULL;
+    if ( pLibFileName ) sprintf( PreCommand, "read_genlib %s; ", pLibFileName );
+    sprintf( FileName, "%06x.mm", Rand );
+    Abc_NtkWriteToFile( FileName, p );    
+    char * pScript = Abc_UtilStrsav( pScript0 );
+    sprintf( Command, "./abc -q \"%sread_mm %s; %s; write_mm %s\"", PreCommand[0] ? PreCommand : "", FileName, pScript, FileName );    
 #if defined(__wasm)
     if ( 1 )
 #else
@@ -1302,9 +1308,11 @@ Abc_Ntk_t * Abc_NtkStochProcessOne( Abc_Ntk_t * p, char * pScript, int Rand, int
         fprintf( stderr, "Sorry for the inconvenience.\n" );
         fflush( stdout );
         unlink( FileName );
+        ABC_FREE( pScript );
         return Abc_NtkDupDfs(p);
-    }    
-    pNew = Io_ReadBlif( FileName, 0 );
+    }
+    ABC_FREE( pScript );
+    pNew = Abc_NtkReadFromFile( FileName );
     unlink( FileName );
     if ( pNew && Abc_NtkGetMappedArea(pNew) < Abc_NtkGetMappedArea(p) ) {
         pNew = Abc_NtkDupDfs( pTemp = pNew );
@@ -1327,8 +1335,6 @@ int Abc_NtkStochProcess1( void * p )
 Vec_Ptr_t * Abc_NtkStochProcess( Vec_Ptr_t * vWins, char * pScript, int nProcs, int TimeSecs, int fVerbose )
 {
     if ( nProcs <= 2 ) {
-        if ( fVerbose )
-            printf( "Running non-concurrent synthesis.\n" ), fflush(stdout);            
         Abc_NtkStochSynthesis( vWins, pScript );
         return NULL;
     }
@@ -1344,8 +1350,6 @@ Vec_Ptr_t * Abc_NtkStochProcess( Vec_Ptr_t * vWins, char * pScript, int nProcs, 
         pData[i].TimeOut = TimeSecs;
         Vec_PtrPush( vData, pData+i );
     }
-    if ( fVerbose )
-        printf( "Running concurrent synthesis with %d processes.\n", nProcs ), fflush(stdout);
     Util_ProcessThreads( Abc_NtkStochProcess1, vData, nProcs, TimeSecs, fVerbose );
     // replace old AIGs by new AIGs
     Vec_PtrForEachEntry( Abc_Ntk_t *, vWins, pNtk, i ) {
@@ -1455,6 +1459,11 @@ void Abc_NtkInsertPartitions_rec( Abc_Ntk_t * pNew, Abc_Obj_t * pObj, Vec_Int_t 
 }
 Abc_Ntk_t * Abc_NtkInsertPartitions( Abc_Ntk_t * p, Vec_Ptr_t * vvIns, Vec_Ptr_t * vvOuts, Vec_Ptr_t * vWins )
 {
+    if ( vvIns == NULL ) {
+        assert( vvOuts == NULL );
+        assert( Vec_PtrSize(vWins) == 1 );
+        return Abc_NtkDupDfs( (Abc_Ntk_t *)Vec_PtrEntry(vWins, 0) );        
+    }
     // check consistency of input data
     Abc_Ntk_t * pNew, * pTemp; Abc_Obj_t * pObj; int i, k, iNode;
     Vec_PtrForEachEntry( Abc_Ntk_t *, vWins, pTemp, i ) {
@@ -1595,18 +1604,18 @@ Vec_Ptr_t * Abc_NtkDeriveWinOutsAll( Abc_Ntk_t * pNtk, Vec_Ptr_t * vvNodes )
         Vec_PtrPush( vvOuts, Abc_NtkDeriveWinOuts(pNtk, vNodes) );
     return vvOuts;
 }
-void Abc_NtkPermuteLevel( Abc_Ntk_t * pNtk )
+void Abc_NtkPermuteLevel( Abc_Ntk_t * pNtk, int Level )
 {
-    Abc_Obj_t * pObj, * pFanin; int i, k;
-    Abc_NtkLevelReverse( pNtk );
-    Abc_NtkForEachNode( pNtk, pObj, i )
-    {
-        int LevelMin = 0, LevelMax = Abc_ObjLevel(pObj);
-        Abc_ObjForEachFanin( pObj, pFanin, k )
-            LevelMin = Abc_MaxInt( LevelMin, Abc_ObjLevel(pFanin) );
+    Abc_Obj_t * pObj, * pNext; int i, k;
+    Abc_NtkForEachNode( pNtk, pObj, i ) {
+        int LevelMin = Abc_ObjLevel(pObj), LevelMax = Level + 1;
+        Abc_ObjForEachFanout( pObj, pNext, k )
+            if ( Abc_ObjIsNode(pNext) )
+                LevelMax = Abc_MinInt( LevelMax, Abc_ObjLevel(pNext) );
         assert( LevelMin < LevelMax );
-        // randomly set level between LevelMin + 1 and LevelMax
-        pObj->Level = LevelMin + 1 + (Abc_Random(0) % (LevelMax - LevelMin));
+        // randomly set level between LevelMin and LevelMax-1
+        pObj->Level = LevelMin + (Abc_Random(0) % (LevelMax - LevelMin));
+        assert( pObj->Level < LevelMax );
     }
 }
 Vec_Int_t * Abc_NtkCollectObjectsPointedTo( Abc_Ntk_t * pNtk, int Level )
@@ -1675,6 +1684,8 @@ Vec_Wec_t * Abc_NtkCollectObjectsWithSuppLimit( Abc_Ntk_t * pNtk, int Level, int
     Abc_NtkForEachNode( pNtk, pObj, i )
         if ( Abc_ObjLevel(pObj) > Level && Vec_IntEntry(vSuppIds, i) >= 0 && !Abc_NodeIsTravIdCurrent(pObj) ) {
             Vec_Int_t * vSupp = Vec_WecEntry( vSupps, Vec_IntEntry(vSuppIds, i) );
+            if ( Vec_IntSize(vSupp) < 4 )
+                continue;
             Vec_Int_t * vThis = Vec_WecPushLevel( vResSupps );
             Vec_IntGrow( vThis, Vec_IntSize(vSupp) + 1 );
             Vec_IntAppend( vThis, vSupp );
@@ -1790,11 +1801,17 @@ Vec_Ptr_t * Abc_NtkDupWindows( Abc_Ntk_t * pNtk, Vec_Ptr_t * vvIns, Vec_Ptr_t * 
 }
 Vec_Ptr_t * Abc_NtkExtractPartitions( Abc_Ntk_t * pNtk, int Iter, int nSuppMax, Vec_Ptr_t ** pvIns, Vec_Ptr_t ** pvOuts, Vec_Ptr_t ** pvNodes )
 {
-    int iUseRevL = Abc_Random(0) & 1;
+    if ( Abc_NtkCiNum(pNtk) <= nSuppMax ) {
+        Vec_Ptr_t * vWins = Vec_PtrAlloc( 1 );
+        Vec_PtrPush( vWins, Abc_NtkDupDfs(pNtk) );
+        *pvIns = *pvOuts = *pvNodes = NULL;
+        return vWins;
+    }
+    int iUseRevL = Iter % 3 == 0 ? 0 : Abc_Random(0) & 1;
     int LevelMax = iUseRevL ? Abc_NtkLevelR(pNtk) : Abc_NtkLevel(pNtk);
-    int LevelCut = LevelMax > 8 ? (Abc_Random(0) % (LevelMax - 4)) : 0;
+    int LevelCut = Iter % 3 == 0 ? 0 : LevelMax > 8 ? 2 + (Abc_Random(0) % (LevelMax - 4)) : 0;
     //printf( "Using %s cut level %d (out of %d)\n", iUseRevL ? "reverse": "direct", LevelCut, LevelMax );
-    //Abc_NtkPermuteLevel( pNtk );
+    Abc_NtkPermuteLevel( pNtk, LevelMax );
     Vec_Wec_t * vStore = Vec_WecStart( LevelMax+1 );
     Vec_Wec_t * vSupps = Abc_NtkCollectObjectsWithSuppLimit( pNtk, LevelCut, nSuppMax );
     Vec_Ptr_t * vIns   = Abc_NtkDeriveWinInsAll( vSupps, nSuppMax, pNtk );
@@ -1829,8 +1846,14 @@ void Abc_NtkStochMap( int nSuppMax, int nIters, int TimeOut, int Seed, int fVerb
     Abc_Random(1);
     for ( i = 0; i < 10+Seed; i++ )
         Abc_Random(0);
-    if ( fVerbose )
-    printf( "Running %d iterations of script \"%s\".\n", nIters, pScript );
+    if ( fVerbose ) {
+        printf( "Running %d iterations of the script \"%s\"", nIters, pScript );
+        if ( nProcs > 2 )
+            printf( " using %d concurrent threads.\n", nProcs-1 );
+        else
+            printf( " without concurrency.\n" );
+        fflush(stdout);
+    }
     Vec_Ptr_t * vIns = NULL, * vOuts = NULL, * vNodes = NULL;
     for ( i = 0; i < nIters; i++ )
     {
@@ -1850,9 +1873,9 @@ void Abc_NtkStochMap( int nSuppMax, int nIters, int TimeOut, int Seed, int fVerb
         Vec_PtrFreeFunc( vWins,  (void (*)(void *)) Abc_NtkDelete );
         //Vec_PtrFreeFunc( vOpts, (void (*)(void *)) Abc_NtkDelete );
         vOpts = NULL;
-        Vec_PtrFreeFunc( vIns,   (void (*)(void *)) Vec_IntFree );
-        Vec_PtrFreeFunc( vOuts,  (void (*)(void *)) Vec_IntFree );                
-        Vec_PtrFreeFunc( vNodes, (void (*)(void *)) Vec_IntFree );                
+        if ( vIns )   Vec_PtrFreeFunc( vIns,   (void (*)(void *)) Vec_IntFree );
+        if ( vOuts )  Vec_PtrFreeFunc( vOuts,  (void (*)(void *)) Vec_IntFree );                
+        if ( vNodes ) Vec_PtrFreeFunc( vNodes, (void (*)(void *)) Vec_IntFree );                
         if ( nTimeToStop && Abc_Clock() > nTimeToStop )
         {
             printf( "Runtime limit (%d sec) is reached after %d iterations.\n", TimeOut, i );
