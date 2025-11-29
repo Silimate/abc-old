@@ -89,6 +89,7 @@ static int Abc_CommandPrintMffc              ( Abc_Frame_t * pAbc, int argc, cha
 static int Abc_CommandPrintFactor            ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandPrintLevel             ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandPrintSupport           ( Abc_Frame_t * pAbc, int argc, char ** argv );
+static int Abc_CommandPrintNpn               ( Abc_Frame_t * pAbc, int argc, char ** argv );
 #ifdef ABC_USE_CUDD
 static int Abc_CommandPrintMint              ( Abc_Frame_t * pAbc, int argc, char ** argv );
 #endif
@@ -648,6 +649,7 @@ static int Abc_CommandAbc9MulFind            ( Abc_Frame_t * pAbc, int argc, cha
 static int Abc_CommandAbc9MulFind3           ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandAbc9BsFind             ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandAbc9AndCare            ( Abc_Frame_t * pAbc, int argc, char ** argv );
+static int Abc_CommandAbc9Cuts               ( Abc_Frame_t * pAbc, int argc, char ** argv );
 
 static int Abc_CommandAbc9Test               ( Abc_Frame_t * pAbc, int argc, char ** argv );
 
@@ -910,6 +912,7 @@ void Abc_Init( Abc_Frame_t * pAbc )
     Cmd_CommandAdd( pAbc, "Printing",     "print_level",   Abc_CommandPrintLevel,       0 );
     Cmd_CommandAdd( pAbc, "Printing",     "psu",           Abc_CommandPrintSupport,     0 );
     Cmd_CommandAdd( pAbc, "Printing",     "print_supp",    Abc_CommandPrintSupport,     0 );
+    Cmd_CommandAdd( pAbc, "Printing",     "print_npn",     Abc_CommandPrintNpn,         0 );
 #ifdef ABC_USE_CUDD
     Cmd_CommandAdd( pAbc, "Printing",     "print_mint",    Abc_CommandPrintMint,        0 );
 #endif
@@ -1478,6 +1481,7 @@ void Abc_Init( Abc_Frame_t * pAbc )
     Cmd_CommandAdd( pAbc, "ABC9",         "&mulfind3",     Abc_CommandAbc9MulFind3,               0 );    
     Cmd_CommandAdd( pAbc, "ABC9",         "&bsfind",       Abc_CommandAbc9BsFind,                 0 );    
     Cmd_CommandAdd( pAbc, "ABC9",         "&andcare",      Abc_CommandAbc9AndCare,                0 );   
+    Cmd_CommandAdd( pAbc, "ABC9",         "&cuts",         Abc_CommandAbc9Cuts,                   0 );   
     
     Cmd_CommandAdd( pAbc, "ABC9",         "&test",         Abc_CommandAbc9Test,                   0 );
 
@@ -2277,6 +2281,61 @@ usage:
     Abc_Print( -2, "\t-h    : print the command usage\n");
     return 1;
 }
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+int Abc_CommandPrintNpn( Abc_Frame_t * pAbc, int argc, char ** argv )
+{
+    extern void Dau_PrintNpnFunctions( word * p, int nVars, int fVerbose );
+    char * pTruthStr = NULL;
+    word   pTruth[16] = {0};
+    int c, nVars, fVerbose = 0;
+    Extra_UtilGetoptReset();
+    while ( ( c = Extra_UtilGetopt( argc, argv, "vh" ) ) != EOF )
+    {
+        switch ( c )
+        {
+        case 'v':
+            fVerbose ^= 1;
+            break;
+        case 'h':
+            goto usage;
+        default:
+            goto usage;
+        }
+    }
+    if ( globalUtilOptind != argc-1 )
+    {
+        Abc_Print( -1, "The command expects the truth table on the command line.\n" );
+        goto usage;
+    }
+    pTruthStr = argv[globalUtilOptind];
+    nVars = Abc_TtReadHex( pTruth, pTruthStr );
+    assert( nVars <= 10 );
+    Dau_PrintNpnFunctions( pTruth, nVars, fVerbose );
+    return 0;
+
+usage:
+    Abc_Print( -2, "usage: print_npn [-vh] <truth>\n" );
+    Abc_Print( -2, "\t           prints the NPN members of the given function\n" );
+    Abc_Print( -2, "\t-v       : enable verbose output [default = %s].\n", fVerbose? "yes": "no" );
+    Abc_Print( -2, "\t-h       : print the command usage\n");
+    Abc_Print( -2, "\t<truth>  : the truth table in hexadecimal notation\n");
+    
+    return 1;
+}
+
+
+
 
 /**Function*************************************************************
 
@@ -10700,6 +10759,7 @@ int Abc_CommandLutExact( Abc_Frame_t * pAbc, int argc, char ** argv )
 {
     extern int  Exa7_ManExactSynthesis( Bmc_EsPar_t * pPars );
     extern int  Exa8_ManExactSynthesis( Bmc_EsPar_t * pPars );
+    extern int  Exa8_ManExactSynthesisIter( Bmc_EsPar_t * pPars );
     extern int  Exa3_ManExactSynthesis( Bmc_EsPar_t * pPars );
     extern void Exa3_ManExactSynthesis2( Bmc_EsPar_t * pPars );
     extern void Exa3_ManExactSynthesisRand( Bmc_EsPar_t * pPars );
@@ -10708,7 +10768,7 @@ int Abc_CommandLutExact( Abc_Frame_t * pAbc, int argc, char ** argv )
     Bmc_EsPar_t Pars, * pPars = &Pars;
     Bmc_EsParSetDefault( pPars );
     Extra_UtilGetoptReset();
-    while ( ( c = Extra_UtilGetopt( argc, argv, "NMKTFUSYPiaorfgckdsvh" ) ) != EOF )
+    while ( ( c = Extra_UtilGetopt( argc, argv, "NMKTFUSYPiaorfgckdsmvh" ) ) != EOF )
     {
         switch ( c )
         {
@@ -10833,6 +10893,9 @@ int Abc_CommandLutExact( Abc_Frame_t * pAbc, int argc, char ** argv )
         case 's':
             pPars->fSilent ^= 1;
             break;
+        case 'm':
+            pPars->fMinNodes ^= 1;
+            break;
         case 'v':
             pPars->fVerbose ^= 1;
             break;
@@ -10909,7 +10972,7 @@ int Abc_CommandLutExact( Abc_Frame_t * pAbc, int argc, char ** argv )
     return 0;
 
 usage:
-    Abc_Print( -2, "usage: lutexact [-NMKTFUS <num>] [-Y string] [-P string] [-iaorfgckdsvh] <hex>\n" );
+    Abc_Print( -2, "usage: lutexact [-NMKTFUS <num>] [-Y string] [-P string] [-iaorfgckdsmvh] <hex>\n" );
     Abc_Print( -2, "\t           exact synthesis of I-input function using N K-input gates\n" );
     Abc_Print( -2, "\t-N <num> : the number of input variables [default = %d]\n", pPars->nVars );
     Abc_Print( -2, "\t-M <num> : the number of K-input nodes [default = %d]\n", pPars->nNodes );
@@ -10930,6 +10993,7 @@ usage:
     Abc_Print( -2, "\t-k       : toggle using Kissat 4.0.2 by Armin Biere [default = %s]\n", pPars->fKissat ? "yes" : "no" );
     Abc_Print( -2, "\t-d       : toggle dumping decomposed networks into BLIF files [default = %s]\n", pPars->fDumpBlif ? "yes" : "no" );
     Abc_Print( -2, "\t-s       : toggle silent computation (no messages, except when a solution is found) [default = %s]\n", pPars->fSilent ? "yes" : "no" );
+    Abc_Print( -2, "\t-m       : toggle minimum-node solution possibly smaller than \"-M <num>\" [default = %s]\n", pPars->fMinNodes ? "yes" : "no" );
     Abc_Print( -2, "\t-v       : toggle verbose printout [default = %s]\n", pPars->fVerbose ? "yes" : "no" );
     Abc_Print( -2, "\t-h       : print the command usage\n" );
     Abc_Print( -2, "\t<hex>    : truth table in hex notation\n" );
@@ -43640,7 +43704,7 @@ usage:
     Abc_Print( -2, "\t-u       : toggles enabling additional check [default = %s]\n", pPars->fEnableCheck75u? "yes": "no" );
     Abc_Print( -2, "\t-i       : toggles using cofactoring variables [default = %s]\n", pPars->fUseCofVars? "yes": "no" );
     Abc_Print( -2, "\t-j       : toggles enabling additional check [default = %s]\n", pPars->fEnableCheck07? "yes": "no" );
-    Abc_Print( -2, "\t-j       : toggles using AND bi-decomposition [default = %s]\n", pPars->fUseAndVars? "yes": "no" );
+//    Abc_Print( -2, "\t-j       : toggles using AND bi-decomposition [default = %s]\n", pPars->fUseAndVars? "yes": "no" );
     Abc_Print( -2, "\t-k       : toggles matching based on precomputed DSD manager [default = %s]\n", pPars->fUseDsdTune? "yes": "no" );
     Abc_Print( -2, "\t-z       : toggles deriving LUTs when mapping into LUT structures [default = %s]\n", pPars->fDeriveLuts? "yes": "no" );
     Abc_Print( -2, "\t-t       : toggles optimizing average rather than maximum level [default = %s]\n", pPars->fDoAverage? "yes": "no" );
@@ -44844,7 +44908,7 @@ int Abc_CommandAbc9Nf( Abc_Frame_t * pAbc, int argc, char ** argv )
     Gia_Man_t * pNew; int c;
     Nf_ManSetDefaultPars( pPars );
     Extra_UtilGetoptReset();
-    while ( ( c = Extra_UtilGetopt( argc, argv, "KCFARLEDQWZakpqfvwh" ) ) != EOF )
+    while ( ( c = Extra_UtilGetopt( argc, argv, "KCFARLEDQMWZakpqfvwh" ) ) != EOF )
     {
         switch ( c )
         {
@@ -44945,12 +45009,23 @@ int Abc_CommandAbc9Nf( Abc_Frame_t * pAbc, int argc, char ** argv )
         case 'Q':
             if ( globalUtilOptind >= argc )
             {
-                Abc_Print( -1, "Command line switch \"-D\" should be followed by an integer number.\n" );
+                Abc_Print( -1, "Command line switch \"-Q\" should be followed by an integer number.\n" );
                 goto usage;
             }
             pPars->nReqTimeFlex = atoi(argv[globalUtilOptind]);
             globalUtilOptind++;
             if ( pPars->nReqTimeFlex < 0 )
+                goto usage;
+            break;
+        case 'M':
+            if ( globalUtilOptind >= argc )
+            {
+                Abc_Print( -1, "Command line switch \"-M\" should be followed by an integer number.\n" );
+                goto usage;
+            }
+            pPars->nMaxMatches = atoi(argv[globalUtilOptind]);
+            globalUtilOptind++;
+            if ( pPars->nMaxMatches < 0 )
                 goto usage;
             break;
         case 'W':
@@ -45026,7 +45101,7 @@ usage:
         sprintf(Buffer, "best possible" );
     else
         sprintf(Buffer, "%d", pPars->DelayTarget );
-    Abc_Print( -2, "usage: &nf [-KCFARLEDQ num] [-Z file] [-akpqfvwh]\n" );
+    Abc_Print( -2, "usage: &nf [-KCFARLEDQM num] [-Z file] [-akpqfvwh]\n" );
     Abc_Print( -2, "\t           performs technology mapping of the network\n" );
     Abc_Print( -2, "\t-K num   : LUT size for the mapping (2 <= K <= %d) [default = %d]\n",                  pPars->nLutSizeMax, pPars->nLutSize );
     Abc_Print( -2, "\t-C num   : the max number of priority cuts (1 <= C <= %d) [default = %d]\n",           pPars->nCutNumMax, pPars->nCutNum );
@@ -45037,6 +45112,7 @@ usage:
     Abc_Print( -2, "\t-E num   : the area/edge tradeoff parameter (0 <= num <= 100) [default = %d]\n",       pPars->nAreaTuner );
     Abc_Print( -2, "\t-D num   : sets the delay constraint for the mapping [default = %s]\n",                Buffer );
     Abc_Print( -2, "\t-Q num   : internal parameter impacting area of the mapping [default = %d]\n",         pPars->nReqTimeFlex );
+    Abc_Print( -2, "\t-M num   : the max number of matches to dump into a binary file [default = %d]\n",     pPars->nMaxMatches );
     Abc_Print( -2, "\t-Z file  : the output file name to dump internal match info [default = unused]\n" );
     Abc_Print( -2, "\t-a       : toggles SAT-based area-oriented mapping (experimental) [default = %s]\n",   pPars->fAreaOnly? "yes": "no" );
     Abc_Print( -2, "\t-k       : toggles coarsening the subject graph [default = %s]\n",                     pPars->fCoarsen? "yes": "no" );
@@ -58151,6 +58227,114 @@ usage:
     return 1;
 }
 
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+int Abc_CommandAbc9Cuts( Abc_Frame_t * pAbc, int argc, char ** argv )
+{
+    extern void Gia_ManComputeCutsCore( Gia_Man_t * pGia, int nCutSize0, int nCutNum0, int fTruth0, int fVerbose0, int fDumpText, int fDumpBin, char * pFileName );
+    int nCutSize =  6;
+    int nCutNum  = 16;
+    int fTruth   =  1;
+    int fVerbose =  1;
+    int fDumpText = 0;
+    int fDumpBin  = 0;
+    int c;
+    char * pFileName = NULL;
+    Extra_UtilGetoptReset();
+    while ( ( c = Extra_UtilGetopt( argc, argv, "KCtdbvh" ) ) != EOF )
+    {
+        switch ( c )
+        {
+        case 'K':
+            if ( globalUtilOptind >= argc )
+            {
+                Abc_Print( -1, "Command line switch \"-K\" should be followed by an integer.\n" );
+                goto usage;
+            }
+            nCutSize = atoi(argv[globalUtilOptind]);
+            globalUtilOptind++;
+            if ( nCutSize < 0 )
+                goto usage;
+            break;
+        case 'C':
+            if ( globalUtilOptind >= argc )
+            {
+                Abc_Print( -1, "Command line switch \"-C\" should be followed by an integer.\n" );
+                goto usage;
+            }
+            nCutNum = atoi(argv[globalUtilOptind]);
+            globalUtilOptind++;
+            if ( nCutNum < 0 )
+                goto usage;
+            break;
+        case 't':
+            fTruth ^= 1;
+            break;
+        case 'd':
+            fDumpText ^= 1;
+            break;
+        case 'b':
+            fDumpBin ^= 1;
+            break;
+        case 'v':
+            fVerbose ^= 1;
+            break;
+        case 'h':
+            goto usage;
+        default:
+            goto usage;
+        }
+    }
+    if ( pAbc->pGia == NULL )
+    {
+        Abc_Print( -1, "Abc_CommandAbc9Cuts(): There is no AIG.\n" );
+        return 0;
+    }
+    if ( argc == globalUtilOptind + 1 )
+        pFileName = argv[globalUtilOptind];
+    else if ( argc != globalUtilOptind )
+    {
+        Abc_Print( 1,"Abc_CommandAbc9Cuts(): Trailing arguments on the command line.\n" );
+        return 0;
+    }
+    if ( nCutSize < 2 || nCutSize > 14 )
+    {
+        Abc_Print( -1, "The number of cut leaves should belong to the range: %d <= K <= %d.\n", 2, 14 );
+        return 1;
+    }
+    if ( nCutNum < 2 || nCutNum > 256 )
+    {
+        Abc_Print( -1, "The number of cuts per node should belong to the range: %d <= C <= %d.\n", 2, 256 );
+        return 1;
+    }
+    if ( fDumpBin && !pFileName )
+    {
+        Abc_Print( -1, "Output binary file name should be provided on the command line.\n" );
+        return 1;
+    }
+    Gia_ManComputeCutsCore( pAbc->pGia, nCutSize, nCutNum, fTruth, fVerbose, fDumpText, fDumpBin, pFileName );
+    return 0;
+
+usage:
+    Abc_Print( -2, "usage: cuts [-KC num] [-tdbvh]\n" );
+    Abc_Print( -2, "\t         computes K-input cuts for the nodes in the current AIG\n" );
+    Abc_Print( -2, "\t-K num : max number of leaves (%d <= num <= %d) [default = %d]\n", 2, 14, nCutSize );
+    Abc_Print( -2, "\t-C num : max number of cuts at a node (%d <= num <= %d) [default = %d]\n", 2, 256, nCutNum );
+    Abc_Print( -2, "\t-t     : toggle truth table computation and cut minimization [default = %s]\n", fTruth? "yes": "no" );
+    Abc_Print( -2, "\t-d     : toggle dumping cuts into a text file [default = %s]\n", fDumpText? "yes": "no" );
+    Abc_Print( -2, "\t-v     : toggle printing verbose information [default = %s]\n", fDumpBin? "yes": "no" );
+    Abc_Print( -2, "\t-h     : print the command usage\n");
+    return 1;
+}
 
 /**Function*************************************************************
 

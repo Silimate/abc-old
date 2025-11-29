@@ -419,6 +419,21 @@ static void Exa8_ManPrintSolution( Exa8_Man_t * p, int fCompl )
         printf( " )\n" );
     }
 }
+static void Exa8_ManPrintPerm( Exa8_Man_t * p )
+{
+    int i, k, iVar;
+    for ( i = p->nVars; i < p->nObjs; i++ )
+    {
+        if ( i > p->nVars )
+            printf( "_" );
+        for ( k = p->nLutSize - 1; k >= 0; k-- )
+        {
+            iVar = Exa8_ManFindFanin( p, i, k );
+            if ( iVar >= 0 && iVar < p->nVars )
+                printf( "%c", 'a'+iVar );
+        }
+    }
+}
 
 /**Function*************************************************************
 
@@ -655,6 +670,9 @@ static int Exa8_ManAddCnf( Exa8_Man_t * p, int iMint )
 
 int Exa8_ManExactSynthesis( Bmc_EsPar_t * pPars )
 {
+    extern int Exa8_ManExactSynthesisIter( Bmc_EsPar_t * pPars );
+    if ( pPars->fMinNodes )
+        return Exa8_ManExactSynthesisIter( pPars );
     int status = KISSAT_UNDEC;
     int Res = 0;
     abctime clkTotal = Abc_Clock();
@@ -714,6 +732,9 @@ int Exa8_ManExactSynthesis( Bmc_EsPar_t * pPars )
         if ( DiffMint != -1 )
             printf( "Warning: Verification detected a mismatch at minterm %d.\n", DiffMint );
         Exa8_ManPrintSolution( p, fCompl );
+        printf( "The variable permutation is \"" );
+        Exa8_ManPrintPerm(p);
+        printf( "\".\n" );
         if ( pPars->fDumpBlif )
             Exa8_ManDumpBlif( p, fCompl );
         Res = 1;
@@ -726,6 +747,7 @@ int Exa8_ManExactSynthesis( Bmc_EsPar_t * pPars )
     }
     else
     {
+        Res = 0;
         if ( pPars->RuntimeLim )
             printf( "The solver timed out after %d sec.\n", pPars->RuntimeLim );
     }
@@ -739,6 +761,84 @@ int Exa8_ManExactSynthesis( Bmc_EsPar_t * pPars )
     return Res;
 }
 
+int Exa8_ManExactSynthesisIter( Bmc_EsPar_t * pPars )
+{
+    pPars->fMinNodes = 0;
+    int nNodeMin = (pPars->nVars-2)/(pPars->nLutSize-1) + 1;
+    int nNodeMax = pPars->nNodes, Result = 0;
+    int fGenPerm = pPars->pPermStr == NULL;
+    for ( int n = nNodeMin; n <= nNodeMax; n++ ) {
+        printf( "\nTrying M = %d:\n", n );
+        pPars->nNodes = n;
+        if ( fGenPerm ) {
+            Vec_Str_t * vStr = Vec_StrAlloc( 100 );
+            for ( int v = 0; v < pPars->nLutSize; v++ )
+                Vec_StrPush( vStr, 'a'+v );
+            int nDupVars = Abc_MaxInt(0, (pPars->nLutSize-1) - (pPars->nVars-pPars->nLutSize));
+            Vec_StrPush( vStr, '_' );
+            for ( int v = 0; v < nDupVars; v++ )
+                Vec_StrPush( vStr, 'a'+v );
+            for ( int v = 0; v < pPars->nLutSize-1-nDupVars; v++ )
+                Vec_StrPush( vStr, '*' );
+            for ( int m = 2; m < pPars->nNodes; m++ ) {
+                Vec_StrPush( vStr, '_' );
+                for ( int v = 0; v < pPars->nLutSize-1; v++ )
+                    Vec_StrPush( vStr, '*' );
+            }
+            Vec_StrPush( vStr, '\0' );
+            ABC_FREE( pPars->pPermStr );
+            pPars->pPermStr = Vec_StrReleaseArray(vStr);
+            Vec_StrFree( vStr );
+        }
+        if ( 0 && fGenPerm ) {
+            Vec_Str_t * vStr = Vec_StrAlloc( 100 );
+            for ( int v = 0; v < pPars->nLutSize; v++ )
+                Vec_StrPush( vStr, 'a'+v );
+            for ( int m = 1; m < pPars->nNodes; m++ ) {
+                Vec_StrPush( vStr, '_' );
+                if ( m & 1 ) 
+                    for ( int v = 0; v < pPars->nLutSize-1; v++ )
+                        Vec_StrPush( vStr, 'a'+(pPars->nVars-(pPars->nLutSize-1-v)) );
+                else
+                    for ( int v = 0; v < pPars->nLutSize-1; v++ )
+                        Vec_StrPush( vStr, 'a'+v );
+            }
+            Vec_StrPush( vStr, '\0' );
+            ABC_FREE( pPars->pPermStr );
+            pPars->pPermStr = Vec_StrReleaseArray(vStr);
+            Vec_StrFree( vStr );
+        }
+        if ( 0 && fGenPerm ) {
+            Vec_Str_t * vStr = Vec_StrAlloc( 100 );
+            for ( int v = 0; v < pPars->nLutSize; v++ )
+                Vec_StrPush( vStr, 'a'+v );
+            for ( int m = 1; m < pPars->nNodes; m++ ) {
+                Vec_StrPush( vStr, '_' );
+                if ( m & 1 ) {
+                    Vec_StrPush( vStr, '*' );
+                    Vec_StrPush( vStr, '*' );
+                    for ( int v = 2; v < pPars->nLutSize-1; v++ )
+                        Vec_StrPush( vStr, 'a'+(pPars->nVars-(pPars->nLutSize-1-v)) );
+                }
+                else {
+                    for ( int v = 0; v < pPars->nLutSize-3; v++ )
+                        Vec_StrPush( vStr, 'a'+v );
+                    Vec_StrPush( vStr, '*' );
+                    Vec_StrPush( vStr, '*' );
+                }
+            }
+            Vec_StrPush( vStr, '\0' );
+            ABC_FREE( pPars->pPermStr );
+            pPars->pPermStr = Vec_StrReleaseArray(vStr);
+            Vec_StrFree( vStr );
+        }
+        Result = Exa8_ManExactSynthesis(pPars);
+        fflush( stdout );
+        if ( Result == 1 )
+            break;
+    }
+    return Result;
+}
 
 ////////////////////////////////////////////////////////////////////////
 ///                       END OF FILE                                ///
