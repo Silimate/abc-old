@@ -91,13 +91,13 @@ Cov_Man_t * Cov_ManAlloc( Abc_Ntk_t * pNtk, int nFaninMax, int nCubesMax )
 ***********************************************************************/
 void Cov_ManFree( Cov_Man_t * p )
 {
-    // Vec_Int_t * vSupp;
-    // int i;
-    // for ( i = 0; i < p->vObjStrs->nSize; i++ )
-    // {
-    //     vSupp = ((Cov_Obj_t *)p->vObjStrs->pArray[i])->vSupp;
-    //     if ( vSupp ) Vec_IntFree( vSupp );
-    // }
+    Vec_Int_t * vSupp;
+    int i;
+    for ( i = 0; i < p->vObjStrs->nSize; i++ )
+    {
+        vSupp = ((Cov_Obj_t *)p->vObjStrs->pArray[i])->vSupp;
+        if ( vSupp ) Vec_IntFree( vSupp );
+    }
 
     Min_ManFree( p->pManMin );
     Vec_PtrFree( p->vObjStrs );

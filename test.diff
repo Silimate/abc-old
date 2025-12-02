@@ -1,0 +1,956 @@
+diff --git a/Makefile b/Makefile
+index 35efe859c..3e4d02719 100644
+--- a/Makefile
++++ b/Makefile
+@@ -64,7 +64,7 @@ endif
+ 
+ ARCHFLAGS := $(ARCHFLAGS)
+ 
+-OPTFLAGS  ?= -g -O3
++OPTFLAGS  ?= -g -O
+ 
+ CFLAGS    += -Wall -Wno-unused-function -Wno-write-strings -Wno-sign-compare $(ARCHFLAGS)
+ ifneq ($(findstring arm,$(shell uname -m)),)
+diff --git a/src/aig/gia/gia.h b/src/aig/gia/gia.h
+index efc85813b..0799a0c96 100644
+--- a/src/aig/gia/gia.h
++++ b/src/aig/gia/gia.h
+@@ -1419,8 +1419,6 @@ typedef struct Gia_ChMan_t_ Gia_ChMan_t;
+ extern Gia_ChMan_t *       Gia_ManDupChoicesStart( Gia_Man_t * pGia );
+ extern void                Gia_ManDupChoicesAdd( Gia_ChMan_t * pMan, Gia_Man_t * pGia );
+ extern Gia_Man_t *         Gia_ManDupChoicesFinish( Gia_ChMan_t * pMan );
+-extern Vec_Int_t *         Gia_ManComputeMffc( Gia_Man_t * p, Vec_Int_t * vLits, Vec_Int_t * vOuts );
+-extern Gia_Man_t *         Gia_ManDupExtractMffc( Gia_Man_t * p, Vec_Int_t * vLits, Vec_Int_t * vAnds, Vec_Int_t * vCos );
+ /*=== giaEdge.c ==========================================================*/
+ extern void                Gia_ManEdgeFromArray( Gia_Man_t * p, Vec_Int_t * vArray );
+ extern Vec_Int_t *         Gia_ManEdgeToArray( Gia_Man_t * p );
+diff --git a/src/aig/gia/giaCut.c b/src/aig/gia/giaCut.c
+index 5efc358ff..35e3c34ee 100644
+--- a/src/aig/gia/giaCut.c
++++ b/src/aig/gia/giaCut.c
+@@ -292,8 +292,8 @@ static inline int Gia_CutCompare2( Gia_Cut_t * pCut0, Gia_Cut_t * pCut1 )
+ }
+ static inline int Gia_CutCompare( Gia_Cut_t * pCut0, Gia_Cut_t * pCut1 )
+ {
+-    if ( pCut0->CostF       > pCut1->CostF )        return -1;
+-    if ( pCut0->CostF       < pCut1->CostF )        return  1;
++    if ( pCut0->CostF       > pCut1->CostF )         return -1;
++    if ( pCut0->CostF       < pCut1->CostF )         return  1;
+     if ( pCut0->nLeaves     < pCut1->nLeaves )      return -1;
+     if ( pCut0->nLeaves     > pCut1->nLeaves )      return  1;
+     return 0;
+@@ -1230,7 +1230,7 @@ void Gia_ManComputeCutsCore( Gia_Man_t * pGia, int nCutSize, int nCutNum, int fT
+ 
+ Vec_Wec_t * Gia_ManCompute54Cuts( Gia_Man_t * pGia, int fVerbose )
+ {
+-    Gia_Sto_t * pSto = Gia_ManMatchCutsInt( pGia, 5, 8, 0, fVerbose );
++    Gia_Sto_t * pSto = Gia_ManMatchCutsInt( pGia, 5, 16, 0, fVerbose );
+     Vec_Wec_t * vRes = Vec_WecAlloc( 1000 );
+     Vec_Int_t * vLevel; int i, k, c, * pCut;
+     Vec_WecForEachLevel( pSto->vCuts, vLevel, i ) if ( Vec_IntSize(vLevel) ) {
+diff --git a/src/aig/gia/giaDup.c b/src/aig/gia/giaDup.c
+index 2b4a0199f..ea58ba8b2 100644
+--- a/src/aig/gia/giaDup.c
++++ b/src/aig/gia/giaDup.c
+@@ -1103,31 +1103,23 @@ Vec_Int_t * Gia_ManCreatePerm( int n )
+     }
+     return vPerm;
+ }
+-Gia_Man_t * Gia_ManDupRandPerm( Gia_Man_t * p, int fVerbose )
++Gia_Man_t * Gia_ManDupRandPerm( Gia_Man_t * p )
+ {
+     Vec_Int_t * vPiPerm = Gia_ManCreatePerm( Gia_ManCiNum(p) );
+     Vec_Int_t * vPoPerm = Gia_ManCreatePerm( Gia_ManCoNum(p) );
+     Gia_Man_t * pNew;
+     Gia_Obj_t * pObj;
+-    int i, fCompl = 0;
++    int i;
+     pNew = Gia_ManStart( Gia_ManObjNum(p) );
+     pNew->pName = Abc_UtilStrsav( p->pName );
+     pNew->pSpec = Abc_UtilStrsav( p->pSpec );
+     Gia_ManConst0(p)->Value = 0;
+-    if ( fVerbose ) printf( "Input NP transform: " );
+-    Gia_ManForEachPi( p, pObj, i ) {
+-        Gia_ManPi(p, Vec_IntEntry(vPiPerm,i))->Value = Gia_ManAppendCi(pNew) ^ (fCompl = (Abc_Random(0) & 1));
+-        if ( fVerbose ) printf( "%s%d ", fCompl ? "~":"", Vec_IntEntry(vPiPerm,i) );
+-    }
+-    if ( fVerbose ) printf( "\n" );
++    Gia_ManForEachPi( p, pObj, i )
++        Gia_ManPi(p, Vec_IntEntry(vPiPerm,i))->Value = Gia_ManAppendCi(pNew) ^ (Abc_Random(0) & 1);
+     Gia_ManForEachAnd( p, pObj, i )
+         pObj->Value = Gia_ManAppendAnd( pNew, Gia_ObjFanin0Copy(pObj), Gia_ObjFanin1Copy(pObj) );
+-    if ( fVerbose ) printf( "Output NP transform: " );
+-    Gia_ManForEachPo( p, pObj, i ) {
+-        Gia_ManAppendCo( pNew, Gia_ObjFanin0Copy(Gia_ManPo(p, Vec_IntEntry(vPoPerm,i))) ^ (fCompl = (Abc_Random(0) & 1)) );
+-        if ( fVerbose ) printf( "%s%d ", fCompl ? "~":"", Vec_IntEntry(vPoPerm,i) );
+-    }
+-    if ( fVerbose ) printf( "\n" );
++    Gia_ManForEachPo( p, pObj, i )
++        Gia_ManAppendCo( pNew, Gia_ObjFanin0Copy(Gia_ManPo(p, Vec_IntEntry(vPoPerm,i))) ^ (Abc_Random(0) & 1) );
+     Vec_IntFree( vPiPerm );
+     Vec_IntFree( vPoPerm );
+     return pNew;
+@@ -6609,64 +6601,6 @@ Gia_Man_t * Gia_ManDupChoicesFinish( Gia_ChMan_t * p )
+     return pTemp;
+ }
+ 
+-/**Function*************************************************************
+-
+-  Synopsis    [Extracting MFFC of the nodes supported by a set of literals.]
+-
+-  Description []
+-               
+-  SideEffects []
+-
+-  SeeAlso     []
+-
+-***********************************************************************/
+-
+-// collecting internal nodes and outputs in the MFF of a given set of literals
+-Vec_Int_t * Gia_ManComputeMffc( Gia_Man_t * p, Vec_Int_t * vLits, Vec_Int_t * vOuts )
+-{
+-    Vec_Int_t * vTfo = Vec_IntAlloc( 100 );
+-    Gia_Obj_t * pObj; int i, Lit;
+-    Vec_IntClear( vOuts );
+-    Gia_ManIncrementTravId( p );
+-    Vec_IntForEachEntry( vLits, Lit, i )
+-        Gia_ObjSetTravIdCurrentId( p, Abc_Lit2Var(Lit) );
+-    Gia_ManForEachAnd( p, pObj, i ) {
+-        if ( Gia_ObjIsTravIdCurrentId(p, i) )
+-            continue;
+-        if ( Gia_ObjIsTravIdCurrentId(p, Gia_ObjFaninId0(pObj, i)) && Gia_ObjIsTravIdCurrentId(p, Gia_ObjFaninId1(pObj, i)) )
+-            Gia_ObjSetTravIdCurrentId( p, i ), Vec_IntPush( vTfo, i );        
+-        else if ( Gia_ObjIsTravIdCurrentId(p, Gia_ObjFaninId0(pObj, i)) )
+-            Vec_IntPushUniqueOrder( vOuts, Gia_ObjFaninId0(pObj, i) );
+-        else if ( Gia_ObjIsTravIdCurrentId(p, Gia_ObjFaninId1(pObj, i)) )
+-            Vec_IntPushUniqueOrder( vOuts, Gia_ObjFaninId1(pObj, i) );
+-    }
+-    Gia_ManForEachCo( p, pObj, i )
+-        if ( Gia_ObjIsTravIdCurrentId(p, Gia_ObjFaninId0p(p, pObj)) )
+-            Vec_IntPushUniqueOrder( vOuts, Gia_ObjFaninId0p(p, pObj) );
+-    Vec_IntTwoFilter( vOuts, vTfo );
+-    return vTfo;
+-}
+-
+-// extracting the AIG of the MFFC defined by a given set of literals
+-Gia_Man_t * Gia_ManDupExtractMffc( Gia_Man_t * p, Vec_Int_t * vLits, Vec_Int_t * vAnds, Vec_Int_t * vCos )
+-{
+-    Gia_Man_t * pNew;
+-    Gia_Obj_t * pObj;
+-    int i, Lit;
+-    pNew = Gia_ManStart( 5000 );
+-    pNew->pName = Abc_UtilStrsav( p->pName );
+-    pNew->pSpec = Abc_UtilStrsav( p->pSpec );
+-    pNew->fGiaSimple = 1;
+-    Gia_ManConst0(p)->Value = 0;
+-    Vec_IntForEachEntry( vLits, Lit, i )
+-        Gia_ManObj(p, Abc_Lit2Var(Lit))->Value = Abc_LitNotCond( Gia_ManAppendCi(pNew), Abc_LitIsCompl(Lit) );
+-    Gia_ManForEachObjVec( vAnds, p, pObj, i )
+-        pObj->Value = Gia_ManAppendAnd( pNew, Gia_ObjFanin0Copy(pObj), Gia_ObjFanin1Copy(pObj) );
+-    Gia_ManForEachObjVec( vCos, p, pObj, i )
+-        pObj->Value = Gia_ManAppendCo( pNew, pObj->Value );
+-    return pNew;
+-}
+-
+ ////////////////////////////////////////////////////////////////////////
+ ///                       END OF FILE                                ///
+ ////////////////////////////////////////////////////////////////////////
+diff --git a/src/aig/gia/giaMfs.c b/src/aig/gia/giaMfs.c
+index cc5b14be9..81eb298d3 100644
+--- a/src/aig/gia/giaMfs.c
++++ b/src/aig/gia/giaMfs.c
+@@ -308,19 +308,15 @@ Gia_Man_t * Gia_ManInsertMfs( Gia_Man_t * p, Sfm_Ntk_t * pNtk, int fAllBoxes )
+     int nBoxes   = Gia_ManBoxNum(p);
+     int nRealPis = nBoxes ? Tim_ManPiNum(pManTime) : Gia_ManPiNum(p);
+     int nRealPos = nBoxes ? Tim_ManPoNum(pManTime) : Gia_ManPoNum(p);
+-    int i, k, curCi, curCo, nBoxIns, nBoxOuts, iLitNew, iMfsId, iGroup, Fanin, iBox;
++    int i, k, Id, curCi, curCo, nBoxIns, nBoxOuts, iLitNew, iMfsId, iGroup, Fanin;
+     int nMfsNodes;
+     word * pTruth, uTruthVar = ABC_CONST(0xAAAAAAAAAAAAAAAA);
+     Vec_Wec_t * vGroups = Vec_WecStart( nBoxes );
+     Vec_Int_t * vMfs2Gia, * vMfs2Old;
+     Vec_Int_t * vGroupMap;
+-    Vec_Int_t * vMfsTopo, * vCover, * vBoxesLeft, * vBoxKeep;
++    Vec_Int_t * vMfsTopo, * vCover, * vBoxesLeft;
+     Vec_Int_t * vArray, * vLeaves;
+     Vec_Int_t * vMapping, * vMapping2;
+-    Vec_Int_t * vCoDrivers;
+-    Vec_Int_t * vPiBoxes = NULL;
+-    Vec_Int_t * vBbCiMap = NULL;
+-    Vec_Int_t * vBbOutLit = NULL;
+     int nBbIns = 0, nBbOuts = 0;
+     if ( pManTime ) Tim_ManBlackBoxIoNum( pManTime, &nBbIns, &nBbOuts );
+     nMfsNodes = 1 + Gia_ManCiNum(p) + Gia_ManLutNum(p) + Gia_ManCoNum(p) + nBbIns + nBbOuts;
+@@ -362,40 +358,8 @@ Gia_Man_t * Gia_ManInsertMfs( Gia_Man_t * p, Sfm_Ntk_t * pNtk, int fAllBoxes )
+     assert( curCo == Gia_ManCoNum(p) );
+ 
+     // collect nodes in the given order
+-    if ( nBbOuts > 0 )
+-    {
+-        int iBbOut = 0;
+-        vPiBoxes = Vec_IntStartFull( nBbOuts + nRealPis );
+-        vBbCiMap = Vec_IntStartFull( Gia_ManCiNum(p) );
+-        vBbOutLit = Vec_IntStartFull( nBbOuts );
+-        curCi = nRealPis;
+-        curCo = 0;
+-        for ( i = 0; i < nBoxes; i++ )
+-        {
+-            nBoxIns = Tim_ManBoxInputNum( pManTime, i );
+-            nBoxOuts = Tim_ManBoxOutputNum( pManTime, i );
+-            if ( Tim_ManBoxIsBlack(pManTime, i) )
+-                for ( k = 0; k < nBoxOuts; k++ )
+-                {
+-                    assert( iBbOut < nBbOuts );
+-                    Vec_IntWriteEntry( vPiBoxes, iBbOut, i );
+-                    Vec_IntWriteEntry( vBbCiMap, curCi + k, iBbOut );
+-                    iBbOut++;
+-                }
+-            curCo += nBoxIns;
+-            curCi += nBoxOuts;
+-        }
+-        curCo += nRealPos;
+-        assert( curCi == Gia_ManCiNum(p) );
+-        assert( curCo == Gia_ManCoNum(p) );
+-        assert( iBbOut == nBbOuts );
+-    }
+     vBoxesLeft = Vec_IntAlloc( nBoxes );
+-    vMfsTopo = Sfm_NtkDfs( pNtk, vGroups, vGroupMap, vBoxesLeft, fAllBoxes, vPiBoxes );
+-    Vec_IntUniqify( vBoxesLeft ); // reduce to sorted unique indices expected by the timing manager
+-    vBoxKeep = Vec_IntStart( nBoxes );
+-    Vec_IntForEachEntry( vBoxesLeft, iBox, i )
+-        Vec_IntWriteEntry( vBoxKeep, iBox, 1 );
++    vMfsTopo = Sfm_NtkDfs( pNtk, vGroups, vGroupMap, vBoxesLeft, fAllBoxes );
+     assert( Vec_IntSize(vBoxesLeft) <= nBoxes );
+     assert( Vec_IntSize(vMfsTopo) > 0 );
+ 
+@@ -414,28 +378,13 @@ Gia_Man_t * Gia_ManInsertMfs( Gia_Man_t * p, Sfm_Ntk_t * pNtk, int fAllBoxes )
+ 
+     // map constant
+     Vec_IntWriteEntry( vMfs2Gia, Gia_ObjCopyArray(p, 0), 0 );
+-    // map primary inputs (real ones and preserved box outputs)
+-    Gia_ManForEachCi( p, pObj, i )
+-    {
+-        int iCiId = Gia_ObjId( p, pObj );
+-        int iBox = pManTime ? Tim_ManBoxForCi( pManTime, Gia_ObjCioId(pObj) ) : -1;
+-        int iBbOut = vBbCiMap ? Vec_IntEntry(vBbCiMap, i) : -1;
+-        if ( iBox >= 0 && !Vec_IntEntry(vBoxKeep, iBox) )
+-        {
+-            Vec_IntWriteEntry( vMfs2Gia, Gia_ObjCopyArray(p, iCiId), -1 );
+-            if ( iBbOut >= 0 && vBbOutLit )
+-                Vec_IntWriteEntry( vBbOutLit, iBbOut, -1 );
+-            continue;
+-        }
+-        iLitNew = Gia_ManAppendCi(pNew);
+-        Vec_IntWriteEntry( vMfs2Gia, Gia_ObjCopyArray(p, iCiId), iLitNew );
+-        if ( iBbOut >= 0 && vBbOutLit )
+-            Vec_IntWriteEntry( vBbOutLit, iBbOut, iLitNew );
+-    }
++    // map primary inputs
++    Gia_ManForEachCiId( p, Id, i )
++        if ( i < nRealPis )
++            Vec_IntWriteEntry( vMfs2Gia, Gia_ObjCopyArray(p, Id), Gia_ManAppendCi(pNew) );
+     // map internal nodes
+     vLeaves = Vec_IntAlloc( 6 );
+     vCover = Vec_IntAlloc( 1 << 16 );
+-    vCoDrivers = Vec_IntStartFull( Gia_ManCoNum(p) );
+     Vec_IntForEachEntry( vMfsTopo, iMfsId, i )
+     {
+         pTruth = Sfm_NodeReadTruth( pNtk, iMfsId );
+@@ -443,10 +392,9 @@ Gia_Man_t * Gia_ManInsertMfs( Gia_Man_t * p, Sfm_Ntk_t * pNtk, int fAllBoxes )
+         vArray = Sfm_NodeReadFanins( pNtk, iMfsId ); // belongs to pNtk
+         if ( Vec_IntSize(vArray) == 1 && Vec_IntEntry(vArray,0) < nBbOuts ) // skip unreal inputs
+         {
++            // create CI for the output of black box
+             assert( Abc_LitIsCompl(iGroup) );
+-            assert( vBbOutLit != NULL );
+-            iLitNew = Vec_IntEntry( vBbOutLit, Vec_IntEntry(vArray,0) );
+-            assert( iLitNew >= 0 );
++            iLitNew = Gia_ManAppendCi( pNew );
+             Vec_IntWriteEntry( vMfs2Gia, iMfsId, iLitNew );
+             continue;
+         }
+@@ -462,11 +410,7 @@ Gia_Man_t * Gia_ManInsertMfs( Gia_Man_t * p, Sfm_Ntk_t * pNtk, int fAllBoxes )
+ 
+         Vec_IntForEachEntry( vArray, Fanin, k )
+         {
+-            if ( Fanin < nBbOuts )
+-                iLitNew = Vec_IntEntry( vBbOutLit, Fanin );
+-            else
+-                iLitNew = Vec_IntEntry( vMfs2Gia, Fanin );
+-            assert( iLitNew >= 0 );
++            iLitNew = Vec_IntEntry( vMfs2Gia, Fanin );  assert( iLitNew >= 0 );
+             Vec_IntPush( vLeaves, iLitNew );            
+         }
+         if ( iGroup == -1 ) // internal node
+@@ -494,21 +438,11 @@ Gia_Man_t * Gia_ManInsertMfs( Gia_Man_t * p, Sfm_Ntk_t * pNtk, int fAllBoxes )
+                 Abc_TtFlipVar5( pTruth, Vec_IntSize(vLeaves) );
+             }
+         }
+-        else if ( Abc_LitIsCompl(iGroup) ) // internal CI (box output)
+-        {
+-            iLitNew = Vec_IntEntry( vMfs2Gia, iMfsId );
+-            if ( iLitNew < 0 )
+-                continue;
+-        }
+         else // internal CO
+         {
+-            int iObjOld = Vec_IntEntry( vMfs2Old, iMfsId );
+-            int iCoIdx;
+-            assert( iObjOld >= 0 );
+             assert( pTruth[0] == uTruthVar || pTruth[0] == ~uTruthVar );
+-            iLitNew = Abc_LitNotCond( Vec_IntEntry(vLeaves, 0), pTruth[0] == ~uTruthVar );
+-            iCoIdx = Gia_ObjCioId( Gia_ManObj(p, iObjOld) );
+-            Vec_IntWriteEntry( vCoDrivers, iCoIdx, iLitNew );
++            iLitNew = Gia_ManAppendCo( pNew, Abc_LitNotCond(Vec_IntEntry(vLeaves, 0), pTruth[0] == ~uTruthVar) );
++            //printf("Group = %d. po = %d\n", iGroup>>1, iMfsId );
+         }
+ done:
+         Vec_IntWriteEntry( vMfs2Gia, iMfsId, iLitNew );
+@@ -516,15 +450,20 @@ done:
+     Vec_IntFree( vCover );
+     Vec_IntFree( vLeaves );
+ 
+-    // map primary outputs (internal box inputs followed by real POs)
++    // map primary outputs
+     Gia_ManForEachCo( p, pObj, i )
+     {
+-        if ( i < Gia_ManCoNum(p) - nRealPos )
++        if ( i < Gia_ManCoNum(p) - nRealPos ) // internal COs
+         {
+-            iLitNew = Vec_IntEntry( vCoDrivers, i );
+-            if ( iLitNew == -1 )
+-                continue;
+-            Gia_ManAppendCo( pNew, iLitNew );
++            iMfsId = Gia_ObjCopyArray( p, Gia_ObjId(p, pObj) );
++            iGroup = Vec_IntEntry( vGroupMap, iMfsId );
++            if ( Vec_IntFind(vMfsTopo, iGroup) >= 0 )
++            {
++                iLitNew = Vec_IntEntry( vMfs2Gia, iMfsId );
++                if ( iLitNew < 0 )
++                    continue;
++                assert( iLitNew >= 0 );
++            }
+             continue;
+         }
+         iLitNew = Vec_IntEntry( vMfs2Gia, Gia_ObjCopyArray(p, Gia_ObjFaninId0p(p, pObj)) );
+@@ -567,11 +506,6 @@ done:
+     Vec_IntFree( vMfs2Gia );
+     Vec_IntFree( vMfs2Old );
+     Vec_IntFree( vBoxesLeft );
+-    Vec_IntFree( vBoxKeep );
+-    Vec_IntFree( vCoDrivers );
+-    Vec_IntFreeP( &vPiBoxes );
+-    Vec_IntFreeP( &vBbCiMap );
+-    Vec_IntFreeP( &vBbOutLit );
+     return pNew;
+ }
+ 
+@@ -637,3 +571,4 @@ Gia_Man_t * Gia_ManPerformMfs( Gia_Man_t * p, Sfm_Par_t * pPars )
+ ////////////////////////////////////////////////////////////////////////
+ 
+ ABC_NAMESPACE_IMPL_END
++
+diff --git a/src/aig/gia/giaMulFind.c b/src/aig/gia/giaMulFind.c
+index 3dd454194..5e7d8d7b2 100644
+--- a/src/aig/gia/giaMulFind.c
++++ b/src/aig/gia/giaMulFind.c
+@@ -726,16 +726,8 @@ Vec_Wrd_t * Gia_ManMulFindSim( Vec_Wrd_t * vSim0, Vec_Wrd_t * vSim1, int fSigned
+     }
+     return vRes;
+ }
+-Vec_Wrd_t * Gia_ManMulFindSim2( Vec_Wrd_t * vSim0, Vec_Wrd_t * vSim1, int fSigned )
++void Gia_ManMulFindOutputs( Gia_Man_t * p, Vec_Wec_t * vTerms, int fLits, int fVerbose )
+ {
+-    extern word * product_many(word *pInfo1, int nBits1, word *pInfo2, int nBits2, int fSigned );
+-    word * pRes = product_many( Vec_WrdArray(vSim0), Vec_WrdSize(vSim0), Vec_WrdArray(vSim1), Vec_WrdSize(vSim1), fSigned );
+-    return Vec_WrdAllocArray( pRes, Vec_WrdSize(vSim0) + Vec_WrdSize(vSim1) );
+-}
+-int Gia_ManMulFindOutputs( Gia_Man_t * p, Vec_Wec_t * vTerms, int fLits, int fVerbose )
+-{
+-    //abctime clkTotal = Abc_Clock();
+-    int nDetected = 0;
+     Abc_Random(1);
+     for ( int m = 0; m < Vec_WecSize(vTerms)/3; m++ ) {
+         Vec_Int_t * vIn0 = Vec_WecEntry(vTerms, 3*m+0);
+@@ -743,8 +735,8 @@ int Gia_ManMulFindOutputs( Gia_Man_t * p, Vec_Wec_t * vTerms, int fLits, int fVe
+         Vec_Int_t * vOut = Vec_WecEntry(vTerms, 3*m+2);
+         Vec_Wrd_t * vSim0 = Vec_WrdStartRandom( Vec_IntSize(vIn0) );
+         Vec_Wrd_t * vSim1 = Vec_WrdStartRandom( Vec_IntSize(vIn1) );
+-        Vec_Wrd_t * vSimU = Gia_ManMulFindSim2( vSim0, vSim1, 0 );
+-        Vec_Wrd_t * vSimS = Gia_ManMulFindSim2( vSim0, vSim1, 1 );
++        Vec_Wrd_t * vSimU = Gia_ManMulFindSim( vSim0, vSim1, 0 );
++        Vec_Wrd_t * vSimS = Gia_ManMulFindSim( vSim0, vSim1, 1 );
+         Vec_Int_t * vTfo  = Gia_ManMulFindTfo( p, vIn0, vIn1, fLits );
+         Vec_Wrd_t * vSims = Gia_ManMulFindSimCone( p, vIn0, vIn1, vSim0, vSim1, vTfo, fLits );
+         Vec_Int_t * vOutU = Vec_IntAlloc( 100 );
+@@ -770,14 +762,10 @@ int Gia_ManMulFindOutputs( Gia_Man_t * p, Vec_Wec_t * vTerms, int fLits, int fVe
+         if ( Vec_IntCountEntry(vOutU, -1) < Vec_IntSize(vOutU) ||
+              Vec_IntCountEntry(vOutS, -1) < Vec_IntSize(vOutS) )
+         {
+-            if ( Vec_IntCountEntry(vOutU, -1) < Vec_IntCountEntry(vOutS, -1) ) {
++            if ( Vec_IntCountEntry(vOutU, -1) < Vec_IntCountEntry(vOutS, -1) )
+                 Vec_IntAppend( vOut, vOutU ), Vec_IntPush(vOut, 0);
+-                nDetected = Vec_IntSize(vOutU) - Vec_IntCountEntry(vOutU, -1);
+-            }
+-            else {
++            else
+                 Vec_IntAppend( vOut, vOutS ), Vec_IntPush(vOut, 1);
+-                nDetected = Vec_IntSize(vOutS) - Vec_IntCountEntry(vOutS, -1);
+-            }
+         }
+         else
+         {
+@@ -794,8 +782,6 @@ int Gia_ManMulFindOutputs( Gia_Man_t * p, Vec_Wec_t * vTerms, int fLits, int fVe
+         Vec_IntFree( vOutS );
+     }
+     Vec_WecRemoveEmpty( vTerms );
+-    //Abc_PrintTime( 1, "Output detection time", Abc_Clock() - clkTotal );
+-    return nDetected;
+ }
+ 
+ /**Function*************************************************************
+@@ -845,40 +831,23 @@ void Gia_ManMulFindPrintSet( Vec_Int_t * vSet, int fLit, int fSkipLast )
+ {
+     int i, Temp, Limit = Vec_IntSize(vSet) - fSkipLast;
+     printf( "{" );
+-    if ( Vec_IntSize(vSet) > 16 ) {
+-        Vec_IntForEachEntryStop( vSet, Temp, i, 4 ) {
+-            if ( Temp == -1 )
+-                printf( "n/a%s", i < Limit-1 ? " ":"" );
+-            else
+-                printf( "%s%d%s", (fLit & Abc_LitIsCompl(Temp)) ? "~":"", fLit ? Abc_Lit2Var(Temp) : Temp, i < Limit-1 ? " ":"" );
+-        }
+-        printf( "... " );
+-        Vec_IntForEachEntryStartStop( vSet, Temp, i, Limit-4, Limit ) {
+-            if ( Temp == -1 )
+-                printf( "n/a%s", i < Limit-1 ? " ":"" );
+-            else
+-                printf( "%s%d%s", (fLit & Abc_LitIsCompl(Temp)) ? "~":"", fLit ? Abc_Lit2Var(Temp) : Temp, i < Limit-1 ? " ":"" );
+-        }
+-    }
+-    else {
+-        Vec_IntForEachEntryStop( vSet, Temp, i, Limit ) {
+-            if ( Temp == -1 )
+-                printf( "n/a%s", i < Limit-1 ? " ":"" );
+-            else
+-                printf( "%s%d%s", (fLit & Abc_LitIsCompl(Temp)) ? "~":"", fLit ? Abc_Lit2Var(Temp) : Temp, i < Limit-1 ? " ":"" );
+-        }
++    Vec_IntForEachEntryStop( vSet, Temp, i, Limit ) {
++        if ( Temp == -1 )
++            printf( "n/a%s", i < Limit-1 ? " ":"" );
++        else
++            printf( "%s%d%s", (fLit & Abc_LitIsCompl(Temp)) ? "~":"", fLit ? Abc_Lit2Var(Temp) : Temp, i < Limit-1 ? " ":"" );
+     }
+     printf( "}" );
+ }
+-void Gia_ManMulFindPrintOne( Vec_Wec_t * vTerms, int m, int fBooth, int fInputLits )
++void Gia_ManMulFindPrintOne( Vec_Wec_t * vTerms, int m, int fBooth )
+ {
+     Vec_Int_t * vIn0 = Vec_WecEntry(vTerms, 3*m+0);
+     Vec_Int_t * vIn1 = Vec_WecEntry(vTerms, 3*m+1);
+     Vec_Int_t * vOut = Vec_WecEntry(vTerms, 3*m+2);
+     printf( "%sooth %ssigned %d x %d: ", fBooth ? "B" : "Non-b", Vec_IntEntryLast(vOut) ? "" : "un", Vec_IntSize(vIn0), Vec_IntSize(vIn1) );
+-    Gia_ManMulFindPrintSet( vIn0, fInputLits, 0 );
++    Gia_ManMulFindPrintSet( vIn0, 0, 0 );
+     printf( " * " );
+-    Gia_ManMulFindPrintSet( vIn1, fInputLits, 0 );
++    Gia_ManMulFindPrintSet( vIn1, 0, 0 );
+     printf( " = " );
+     Gia_ManMulFindPrintSet( vOut, 1, 1 );
+     printf( "\n" );
+@@ -893,9 +862,9 @@ void Gia_ManMulFind( Gia_Man_t * p, int nCutNum, int fVerbose )
+     Vec_Wec_t * vTermsA = Gia_ManMulFindA( p, vCuts3, fVerbose ); 
+     printf( "Detected %d booth and %d non-booth multipliers.\n", Vec_WecSize(vTermsB)/3, Vec_WecSize(vTermsA)/3 );
+     for ( m = 0; m < Vec_WecSize(vTermsA)/3; m++ )
+-        Gia_ManMulFindPrintOne( vTermsA, m, 0, 0 );
++        Gia_ManMulFindPrintOne( vTermsA, m, 0 );
+     for ( m = 0; m < Vec_WecSize(vTermsB)/3; m++ )
+-        Gia_ManMulFindPrintOne( vTermsB, m, 1, 0 );
++        Gia_ManMulFindPrintOne( vTermsB, m, 1 );
+     Vec_WecFree( vTermsB );
+     Vec_WecFree( vTermsA );
+     Vec_WecFree( vCuts3 );
+diff --git a/src/base/abci/abc.c b/src/base/abci/abc.c
+index 8c51a934b..48001c76f 100644
+--- a/src/base/abci/abc.c
++++ b/src/base/abci/abc.c
+@@ -48170,7 +48170,7 @@ usage:
+ ***********************************************************************/
+ int Abc_CommandAbc9Permute( Abc_Frame_t * pAbc, int argc, char ** argv )
+ {
+-    extern Gia_Man_t * Gia_ManDupRandPerm( Gia_Man_t * p, int fVerbose );
++    extern Gia_Man_t * Gia_ManDupRandPerm( Gia_Man_t * p );
+     Gia_Man_t * pTemp;
+     int c, RandSeed = 0, fVerbose = 0;
+     Extra_UtilGetoptReset();
+@@ -48211,7 +48211,7 @@ int Abc_CommandAbc9Permute( Abc_Frame_t * pAbc, int argc, char ** argv )
+     Abc_Random(1);
+     for ( c = 0; c < RandSeed; c++ )
+         Abc_Random(0);
+-    pTemp = Gia_ManDupRandPerm( pAbc->pGia, fVerbose );
++    pTemp = Gia_ManDupRandPerm( pAbc->pGia );
+     Abc_FrameUpdateGia( pAbc, pTemp );
+     return 0;
+ 
+diff --git a/src/map/cov/covMan.c b/src/map/cov/covMan.c
+index 436b59051..64620a5a7 100644
+--- a/src/map/cov/covMan.c
++++ b/src/map/cov/covMan.c
+@@ -91,13 +91,13 @@ Cov_Man_t * Cov_ManAlloc( Abc_Ntk_t * pNtk, int nFaninMax, int nCubesMax )
+ ***********************************************************************/
+ void Cov_ManFree( Cov_Man_t * p )
+ {
+-    // Vec_Int_t * vSupp;
+-    // int i;
+-    // for ( i = 0; i < p->vObjStrs->nSize; i++ )
+-    // {
+-    //     vSupp = ((Cov_Obj_t *)p->vObjStrs->pArray[i])->vSupp;
+-    //     if ( vSupp ) Vec_IntFree( vSupp );
+-    // }
++    Vec_Int_t * vSupp;
++    int i;
++    for ( i = 0; i < p->vObjStrs->nSize; i++ )
++    {
++        vSupp = ((Cov_Obj_t *)p->vObjStrs->pArray[i])->vSupp;
++        if ( vSupp ) Vec_IntFree( vSupp );
++    }
+ 
+     Min_ManFree( p->pManMin );
+     Vec_PtrFree( p->vObjStrs );
+diff --git a/src/misc/util/module.make b/src/misc/util/module.make
+index 205e2a734..991f6f311 100644
+--- a/src/misc/util/module.make
++++ b/src/misc/util/module.make
+@@ -7,7 +7,6 @@ SRC +=  src/misc/util/utilBridge.c \
+     src/misc/util/utilIsop.c \
+     src/misc/util/utilLinear.c \
+     src/misc/util/utilMiniver.c \
+-    src/misc/util/utilMulSim.c \
+     src/misc/util/utilNam.c \
+     src/misc/util/utilPrefix.cpp \
+     src/misc/util/utilPth.c \
+diff --git a/src/misc/util/utilMulSim.c b/src/misc/util/utilMulSim.c
+deleted file mode 100644
+index d5542e519..000000000
+--- a/src/misc/util/utilMulSim.c
++++ /dev/null
+@@ -1,230 +0,0 @@
+-/**CFile****************************************************************
+-
+-  FileName    [utilMulSim.c]
+-
+-  SystemName  [ABC: Logic synthesis and verification system.]
+-
+-  PackageName [Generating multiplier simulation info.]
+-
+-  Synopsis    [Generating multiplier simulation info.]
+-
+-  Author      [Alan Mishchenko]
+-  
+-  Affiliation [UC Berkeley]
+-
+-  Date        [Ver. 1.0. Started - Feburary 13, 2011.]
+-
+-  Revision    [$Id: utilMulSim.c,v 1.00 2011/02/11 00:00:00 alanmi Exp $]
+-
+-***********************************************************************/
+-
+-#include <stdint.h>
+-#include <stdlib.h>
+-#include <string.h>
+-#include <stdio.h>
+-#include <assert.h>
+-#include "misc/util/abc_global.h"
+-
+-ABC_NAMESPACE_IMPL_START
+-
+-////////////////////////////////////////////////////////////////////////
+-///                        DECLARATIONS                              ///
+-////////////////////////////////////////////////////////////////////////
+-
+-////////////////////////////////////////////////////////////////////////
+-///                     FUNCTION DEFINITIONS                         ///
+-////////////////////////////////////////////////////////////////////////
+-
+-#define SIG_WIDTH 64    // 64 simulation patterns in each signature word
+-
+-// ----------------------------------------------------------------------
+-// Core 32-bit-limb big integer unsigned multiply
+-// ----------------------------------------------------------------------
+-
+-uint32_t * product(const uint32_t *pArg1, int nInts1,
+-                   const uint32_t *pArg2, int nInts2)
+-{
+-    assert( pArg1 && pArg2 && nInts1 > 0 && nInts2 > 0 );
+-    int nRes = nInts1 + nInts2;
+-    uint32_t *pRes = (uint32_t *)calloc((size_t)nRes, sizeof(uint32_t));
+-    if (!pRes) return NULL;
+-    // Schoolbook multiplication in base 2^32
+-    for (int i = 0; i < nInts1; ++i) {
+-        uint64_t a = pArg1[i];
+-        if (a == 0) continue;        
+-        uint64_t carry = 0;
+-        for (int j = 0; j < nInts2; ++j) {
+-            uint64_t t = (uint64_t)pRes[i + j] + a * (uint64_t)pArg2[j] + carry;
+-            pRes[i + j] = (uint32_t)t;
+-            carry       = t >> 32;
+-        }
+-        pRes[i + nInts2] = (uint32_t)carry;
+-    }
+-    return pRes;
+-}
+-
+-// ----------------------------------------------------------------------
+-// Bit-matrix helpers: signatures <-> per-pattern 32-bit-limb big ints
+-// ----------------------------------------------------------------------
+-
+-static void transpose_signatures_to_pattern(const uint64_t *sigs,
+-                                            int nBits,
+-                                            uint32_t *dst,
+-                                            int nInts,
+-                                            int patternIdx)
+-{
+-    memset(dst, 0, (size_t)nInts * sizeof(uint32_t));
+-    for (int bit = 0; bit < nBits; ++bit) {
+-        uint64_t sigWord = sigs[bit];
+-        uint64_t bitVal  = (sigWord >> patternIdx) & 1ULL;
+-        if (!bitVal) continue;
+-        int word   = bit / 32;
+-        int offset = bit & 31;
+-        dst[word] |= (uint32_t)(1u << offset);
+-    }
+-}
+-
+-static void transpose_pattern_to_signatures(const uint32_t *src,
+-                                            int nIntsRes,
+-                                            int nBitsRes,
+-                                            uint64_t *outSigs,
+-                                            int patternIdx)
+-{
+-    for (int bit = 0; bit < nBitsRes; ++bit) {
+-        int word   = bit / 32;
+-        int offset = bit & 31;
+-        if (word >= nIntsRes)
+-            break;
+-        uint32_t bitVal = (src[word] >> offset) & 1u;
+-        if (bitVal)
+-            outSigs[bit] |= (uint64_t)1ULL << patternIdx;
+-    }
+-}
+-
+-// ----------------------------------------------------------------------
+-// Signed helpers for 32-bit-limb big ints (two's complement on nBits)
+-// ----------------------------------------------------------------------
+-
+-static int is_negative(const uint32_t *x, int nBits)
+-{
+-    int bitPos = nBits - 1;
+-    int word   = bitPos / 32;
+-    int offset = bitPos & 31;
+-    return (x[word] >> offset) & 1u;
+-}
+-
+-static void mask_to_nBits(uint32_t *x, int nInts, int nBits)
+-{
+-    if (nBits <= 0) {
+-        for (int i = 0; i < nInts; ++i)
+-            x[i] = 0;
+-        return;
+-    }
+-    int lastWord       = (nBits - 1) / 32;          // index of last used word
+-    int usedBitsInLast = nBits - lastWord * 32;     // 1..32
+-    // Zero any words above the last used word
+-    for (int i = lastWord + 1; i < nInts; ++i)
+-        x[i] = 0;
+-    // If nBits is not a multiple of 32, mask off the high bits of last word
+-    if (usedBitsInLast < 32) {
+-        uint32_t mask = ((uint32_t)1u << usedBitsInLast) - 1u;
+-        x[lastWord] &= mask;
+-    }
+-}
+-
+-static void twos_complement_inplace(uint32_t *x, int nInts, int nBits)
+-{
+-    // Invert
+-    for (int i = 0; i < nInts; ++i)
+-        x[i] = ~x[i];
+-    mask_to_nBits(x, nInts, nBits);
+-    // Add 1
+-    uint64_t carry = 1;
+-    for (int i = 0; i < nInts; ++i) {
+-        uint64_t sum = (uint64_t)x[i] + carry;
+-        x[i] = (uint32_t)sum;
+-        carry = sum >> 32;
+-        if (!carry)
+-            break;
+-    }
+-    mask_to_nBits(x, nInts, nBits);
+-}
+-
+-// ----------------------------------------------------------------------
+-// product_many: unsigned and signed (two's-complement) versions
+-// ----------------------------------------------------------------------
+-
+-uint64_t * product_many_unsigned(uint64_t *pInfo1, int nBits1,
+-                                 uint64_t *pInfo2, int nBits2)
+-{
+-    assert( pInfo1 && pInfo2 && nBits1 > 0 && nBits2 > 0 );
+-    int nInts1   = (nBits1 + 31) / 32;
+-    int nInts2   = (nBits2 + 31) / 32;
+-    int nBitsRes = nBits1 + nBits2;
+-    int nIntsRes = nInts1 + nInts2;
+-    uint64_t *outSigs = (uint64_t *)calloc((size_t)nBitsRes, sizeof(uint64_t));
+-    if (!outSigs) return NULL;
+-    uint32_t *tmp1 = (uint32_t *)calloc((size_t)nInts1, sizeof(uint32_t));
+-    uint32_t *tmp2 = (uint32_t *)calloc((size_t)nInts2, sizeof(uint32_t));
+-    assert( tmp1 && tmp2 );
+-    for (int pattern = 0; pattern < SIG_WIDTH; ++pattern) {
+-        transpose_signatures_to_pattern(pInfo1, nBits1, tmp1, nInts1, pattern);
+-        transpose_signatures_to_pattern(pInfo2, nBits2, tmp2, nInts2, pattern);
+-        uint32_t *tmpRes = product(tmp1, nInts1, tmp2, nInts2);  assert( tmpRes );
+-        transpose_pattern_to_signatures(tmpRes, nIntsRes, nBitsRes, outSigs, pattern);
+-        free(tmpRes);
+-    }
+-    free(tmp1);
+-    free(tmp2);
+-    return outSigs;
+-}
+-
+-uint64_t * product_many_signed(uint64_t *pInfo1, int nBits1,
+-                               uint64_t *pInfo2, int nBits2)
+-{
+-    assert( pInfo1 && pInfo2 && nBits1 > 0 && nBits2 > 0 );
+-    int nInts1   = (nBits1 + 31) / 32;
+-    int nInts2   = (nBits2 + 31) / 32;
+-    int nBitsRes = nBits1 + nBits2;
+-    int nIntsRes = nInts1 + nInts2;
+-    uint64_t *outSigs = (uint64_t *)calloc((size_t)nBitsRes, sizeof(uint64_t));
+-    if (!outSigs) return NULL;
+-    uint32_t *op1 = (uint32_t *)calloc((size_t)nInts1, sizeof(uint32_t));
+-    uint32_t *op2 = (uint32_t *)calloc((size_t)nInts2, sizeof(uint32_t));
+-    assert( op1 && op2 );    
+-    for (int pattern = 0; pattern < SIG_WIDTH; ++pattern) {
+-        transpose_signatures_to_pattern(pInfo1, nBits1, op1, nInts1, pattern);
+-        transpose_signatures_to_pattern(pInfo2, nBits2, op2, nInts2, pattern);
+-        int neg1   = is_negative(op1, nBits1);
+-        int neg2   = is_negative(op2, nBits2);
+-        int negRes = neg1 ^ neg2;
+-        if (neg1) twos_complement_inplace(op1, nInts1, nBits1);
+-        if (neg2) twos_complement_inplace(op2, nInts2, nBits2);
+-        uint32_t *tmpRes = product(op1, nInts1, op2, nInts2); assert( tmpRes );
+-        if (negRes) 
+-            twos_complement_inplace(tmpRes, nIntsRes, nBitsRes);
+-        else
+-            mask_to_nBits(tmpRes, nIntsRes, nBitsRes);
+-        transpose_pattern_to_signatures(tmpRes, nIntsRes, nBitsRes, outSigs, pattern);
+-        free(tmpRes);
+-    }
+-    free(op1);
+-    free(op2);
+-    return outSigs;
+-}
+-
+-word * product_many(word *pInfo1, int nBits1, word *pInfo2, int nBits2, int fSigned )
+-{
+-    if ( fSigned )
+-        return (word *)product_many_signed((uint64_t *)pInfo1, nBits1, (uint64_t *)pInfo2, nBits2);
+-    else 
+-        return (word *)product_many_unsigned((uint64_t *)pInfo1, nBits1, (uint64_t *)pInfo2, nBits2);
+-}
+-
+-////////////////////////////////////////////////////////////////////////
+-///                       END OF FILE                                ///
+-////////////////////////////////////////////////////////////////////////
+-
+-
+-ABC_NAMESPACE_IMPL_END
+-
+diff --git a/src/misc/vec/vecInt.h b/src/misc/vec/vecInt.h
+index e32a2dd18..a03cd30b8 100644
+--- a/src/misc/vec/vecInt.h
++++ b/src/misc/vec/vecInt.h
+@@ -1947,16 +1947,16 @@ static inline int Vec_IntTwoRemove( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
+ 
+ /**Function*************************************************************
+ 
+-  Synopsis    [Keeps only those entries in vArr1, which are in vArr2.]
++  Synopsis    [Returns the result of merging the two vectors.]
+ 
+-  Description [Assumes that the vectors are sorted in the increasing order.]
++  Description [Keeps only those entries of vArr1, which are in vArr2.]
+                
+   SideEffects []
+ 
+   SeeAlso     []
+ 
+ ***********************************************************************/
+-static inline void Vec_IntTwoFilter( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
++static inline void Vec_IntTwoMerge1( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
+ {
+     int * pBeg  = vArr1->pArray;
+     int * pBeg1 = vArr1->pArray;
+diff --git a/src/opt/lpk/lpkCut.c b/src/opt/lpk/lpkCut.c
+index d5a1857fa..41cfaed5f 100644
+--- a/src/opt/lpk/lpkCut.c
++++ b/src/opt/lpk/lpkCut.c
+@@ -141,7 +141,7 @@ unsigned * Lpk_CutTruth_rec( Hop_Man_t * pMan, Hop_Obj_t * pObj, int nVars, Vec_
+     assert( !Hop_IsComplement(pObj) );
+     if ( pObj->pData )
+     {
+-        // assert( ((unsigned)(ABC_PTRUINT_T)pObj->pData) & 0xffff0000 ); // SILIMATE: disable failing assertion
++        assert( ((unsigned)(ABC_PTRUINT_T)pObj->pData) & 0xffff0000 );
+         return (unsigned *)pObj->pData;
+     }
+     // get the plan for a new truth table
+@@ -197,7 +197,7 @@ unsigned * Lpk_CutTruth( Lpk_Man_t * p, Lpk_Cut_t * pCut, int fInv )
+         // set the initial truth tables at the fanins
+         Abc_ObjForEachFanin( pObj, pFanin, k )
+         {
+-            // assert( ((unsigned)(ABC_PTRUINT_T)pFanin->pCopy) & 0xffff0000 ); // SILIMATE: DISABLE SINCE THIS CAUSES CRASHES...
++            assert( ((unsigned)(ABC_PTRUINT_T)pFanin->pCopy) & 0xffff0000 );
+             Hop_ManPi( pManHop, k )->pData = pFanin->pCopy;
+         }
+         // compute the truth table of internal nodes
+diff --git a/src/opt/sfm/sfm.h b/src/opt/sfm/sfm.h
+index 9f91dafbf..5fd564fce 100644
+--- a/src/opt/sfm/sfm.h
++++ b/src/opt/sfm/sfm.h
+@@ -96,7 +96,7 @@ extern word *       Sfm_NodeReadTruth( Sfm_Ntk_t * p, int i );
+ extern int          Sfm_NodeReadFixed( Sfm_Ntk_t * p, int i );
+ extern int          Sfm_NodeReadUsed( Sfm_Ntk_t * p, int i );
+ /*=== sfmWin.c ==========================================================*/
+-extern Vec_Int_t *  Sfm_NtkDfs( Sfm_Ntk_t * p, Vec_Wec_t * vGroups, Vec_Int_t * vGroupMap, Vec_Int_t * vBoxesLeft, int fAllBoxes, Vec_Int_t * vPiBoxes );
++extern Vec_Int_t *  Sfm_NtkDfs( Sfm_Ntk_t * p, Vec_Wec_t * vGroups, Vec_Int_t * vGroupMap, Vec_Int_t * vBoxesLeft, int fAllBoxes );
+ 
+ 
+ ABC_NAMESPACE_HEADER_END
+@@ -106,3 +106,4 @@ ABC_NAMESPACE_HEADER_END
+ ////////////////////////////////////////////////////////////////////////
+ ///                       END OF FILE                                ///
+ ////////////////////////////////////////////////////////////////////////
++
+diff --git a/src/opt/sfm/sfmWin.c b/src/opt/sfm/sfmWin.c
+index 5bb71d3f8..2e1681991 100644
+--- a/src/opt/sfm/sfmWin.c
++++ b/src/opt/sfm/sfmWin.c
+@@ -133,66 +133,71 @@ static inline int   Sfm_ObjIsTravIdCurrent2( Sfm_Ntk_t * p, int Id )   { return
+   SeeAlso     []
+ 
+ ***********************************************************************/
+-static void Sfm_NtkDfs_rec( Sfm_Ntk_t * p, int iNode, Vec_Int_t * vNodes, Vec_Wec_t * vGroups, Vec_Int_t * vGroupMap, Vec_Int_t * vBoxesLeft, Vec_Int_t * vPiBoxes );
+-static void Sfm_NtkDfsVisitGroup( Sfm_Ntk_t * p, int iGroup, Vec_Int_t * vNodes, Vec_Wec_t * vGroups, Vec_Int_t * vGroupMap, Vec_Int_t * vBoxesLeft, Vec_Int_t * vPiBoxes )
++void Sfm_NtkDfs_rec( Sfm_Ntk_t * p, int iNode, Vec_Int_t * vNodes, Vec_Wec_t * vGroups, Vec_Int_t * vGroupMap, Vec_Int_t * vBoxesLeft )
+ {
+-    int i, iFanin, k, Obj;
+-    Vec_Int_t * vGroup = Vec_WecEntry( vGroups, iGroup );
+-    Vec_IntForEachEntry( vGroup, Obj, i )
+-        assert( Sfm_ObjIsNode(p, Obj) );
+-    Vec_IntForEachEntry( vGroup, Obj, i )
+-        Sfm_ObjSetTravIdCurrent( p, Obj );
+-    Vec_IntForEachEntry( vGroup, Obj, i )
+-        Sfm_ObjForEachFanin( p, Obj, iFanin, k )
+-            Sfm_NtkDfs_rec( p, iFanin, vNodes, vGroups, vGroupMap, vBoxesLeft, vPiBoxes );
+-    Vec_IntForEachEntry( vGroup, Obj, i )
+-        Vec_IntPush( vNodes, Obj );
+-    Vec_IntPush( vBoxesLeft, iGroup );
+-}
+-static void Sfm_NtkDfs_rec( Sfm_Ntk_t * p, int iNode, Vec_Int_t * vNodes, Vec_Wec_t * vGroups, Vec_Int_t * vGroupMap, Vec_Int_t * vBoxesLeft, Vec_Int_t * vPiBoxes )
+-{
+-    int i, iFanin, iGroup;
++    int i, iFanin;
++    if ( Sfm_ObjIsPi(p, iNode) )
++        return;
+     if ( Sfm_ObjIsTravIdCurrent(p, iNode) )
+         return;
+-    iGroup = Vec_IntEntry(vGroupMap, iNode);
+-    if ( iGroup >= 0 )
++    if ( Vec_IntEntry(vGroupMap, iNode) >= 0 )
+     {
+-        Sfm_NtkDfsVisitGroup( p, Abc_Lit2Var(iGroup), vNodes, vGroups, vGroupMap, vBoxesLeft, vPiBoxes );
+-        return;
+-    }
+-    if ( Sfm_ObjIsPi(p, iNode) )
+-    {
+-        if ( vPiBoxes && iNode < Vec_IntSize(vPiBoxes) )
++        int iGroup = Abc_Lit2Var(Vec_IntEntry(vGroupMap, iNode));
++        Vec_Int_t * vGroup = Vec_WecEntry(vGroups, iGroup);
++        assert(Abc_LitIsCompl(Vec_IntEntry(vGroupMap, iNode)));
++        Vec_IntPush(vBoxesLeft, iGroup);
++        Vec_IntForEachEntry(vGroup, iNode, i)
+         {
+-            int iBox = Vec_IntEntry( vPiBoxes, iNode );
+-            if ( iBox >= 0 )
+-            {
+-                Sfm_ObjSetTravIdCurrent( p, iNode );
+-                Sfm_NtkDfsVisitGroup( p, iBox, vNodes, vGroups, vGroupMap, vBoxesLeft, vPiBoxes );
+-            }
++            // ignore inputs
++            if ( !Abc_LitIsCompl(Vec_IntEntry(vGroupMap, iNode)))
++                continue;
++            assert(Sfm_ObjIsNode(p, iNode));
++            Sfm_ObjSetTravIdCurrent(p, iNode);
++            Vec_IntPush(vNodes, iNode);
+         }
+-        return;
+     }
+-    Sfm_ObjSetTravIdCurrent(p, iNode);
+-    Sfm_ObjForEachFanin( p, iNode, iFanin, i )
+-        Sfm_NtkDfs_rec( p, iFanin, vNodes, vGroups, vGroupMap, vBoxesLeft, vPiBoxes );
+-    Vec_IntPush( vNodes, iNode );
++    else
++    {
++        Sfm_ObjSetTravIdCurrent(p, iNode);
++        Sfm_ObjForEachFanin( p, iNode, iFanin, i )
++            Sfm_NtkDfs_rec( p, iFanin, vNodes, vGroups, vGroupMap, vBoxesLeft );
++        Vec_IntPush( vNodes, iNode );
++    }
+ }
+-Vec_Int_t * Sfm_NtkDfs( Sfm_Ntk_t * p, Vec_Wec_t * vGroups, Vec_Int_t * vGroupMap, Vec_Int_t * vBoxesLeft, int fAllBoxes, Vec_Int_t * vPiBoxes )
++Vec_Int_t * Sfm_NtkDfs( Sfm_Ntk_t * p, Vec_Wec_t * vGroups, Vec_Int_t * vGroupMap, Vec_Int_t * vBoxesLeft, int fAllBoxes )
+ {
+     Vec_Int_t * vNodes;
+     int i;
+     Vec_IntClear( vBoxesLeft );
+     vNodes = Vec_IntAlloc( p->nObjs );
+     Sfm_NtkIncrementTravId( p );
+-    if ( fAllBoxes )
++
++    assert(!fAllBoxes); // TODO
++
++    Sfm_NtkForEachPo( p, i ) {
++        int iFanin = Sfm_ObjFanin(p, i, 0);
++        // detect fake PO modeling blackbox input
++        if (Vec_IntEntry(vGroupMap, iFanin) >= 0 && !Abc_LitIsCompl(Vec_IntEntry(vGroupMap, iFanin)))
++            continue;
++        Sfm_NtkDfs_rec( p, iFanin, vNodes, vGroups, vGroupMap, vBoxesLeft );
++    }
++
++    for (i = 0; i < Vec_IntSize( vBoxesLeft ); i++)
+     {
+-        Vec_Int_t * vGroup;
+-        Vec_WecForEachLevel( vGroups, vGroup, i )
+-            Sfm_NtkDfs_rec( p, Vec_IntEntry(vGroup, 0), vNodes, vGroups, vGroupMap, vBoxesLeft, vPiBoxes );
++        int k, j, iNode, iFanin;
++        int iGroup = Vec_IntEntry( vBoxesLeft, i );
++        Vec_Int_t * vGroup = Vec_WecEntry( vGroups, iGroup );
++        Vec_IntForEachEntry( vGroup, iNode, k )
++        {
++            // ignore outputs
++            if ( Abc_LitIsCompl( Vec_IntEntry(vGroupMap, iNode)) )
++                continue;
++            Sfm_ObjForEachFanin( p, iNode, iFanin, j )
++                Sfm_NtkDfs_rec( p, iFanin, vNodes, vGroups, vGroupMap, vBoxesLeft );
++            Vec_IntPush( vNodes, iNode );
++        }
+     }
+-    Sfm_NtkForEachPo( p, i )
+-        Sfm_NtkDfs_rec( p, Sfm_ObjFanin(p, i, 0), vNodes, vGroups, vGroupMap, vBoxesLeft, vPiBoxes );
++
+     return vNodes;
+ }
+ 
+@@ -493,3 +498,4 @@ void Sfm_NtkWindowTest( Sfm_Ntk_t * p, int iNode )
+ 
+ 
+ ABC_NAMESPACE_IMPL_END
++

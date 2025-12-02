@@ -1947,16 +1947,16 @@ static inline int Vec_IntTwoRemove( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
 
 /**Function*************************************************************
 
-  Synopsis    [Keeps only those entries in vArr1, which are in vArr2.]
+  Synopsis    [Returns the result of merging the two vectors.]
 
-  Description [Assumes that the vectors are sorted in the increasing order.]
+  Description [Keeps only those entries of vArr1, which are in vArr2.]
                
   SideEffects []
 
   SeeAlso     []
 
 ***********************************************************************/
-static inline void Vec_IntTwoFilter( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
+static inline void Vec_IntTwoMerge1( Vec_Int_t * vArr1, Vec_Int_t * vArr2 )
 {
     int * pBeg  = vArr1->pArray;
     int * pBeg1 = vArr1->pArray;
