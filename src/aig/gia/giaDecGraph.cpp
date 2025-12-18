@@ -38,7 +38,6 @@
 #include <unordered_map>
 #include <algorithm>
 #include <functional>
-#include <iterator>
 
 #include "gia.h"
 #include "misc/vec/vecHash.h"
