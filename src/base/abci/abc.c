@@ -229,6 +229,7 @@ static int Abc_CommandEspresso               ( Abc_Frame_t * pAbc, int argc, cha
 static int Abc_CommandGen                    ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandGenTF                  ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandGenAT                  ( Abc_Frame_t * pAbc, int argc, char ** argv );
+static int Abc_CommandGenPop                 ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandGenFsm                 ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandCover                  ( Abc_Frame_t * pAbc, int argc, char ** argv );
 static int Abc_CommandDouble                 ( Abc_Frame_t * pAbc, int argc, char ** argv );
@@ -1060,6 +1061,7 @@ void Abc_Init( Abc_Frame_t * pAbc )
     Cmd_CommandAdd( pAbc, "Various",      "gen",           Abc_CommandGen,              0 );
     Cmd_CommandAdd( pAbc, "Various",      "gentf",         Abc_CommandGenTF,            0 );
     Cmd_CommandAdd( pAbc, "Various",      "genat",         Abc_CommandGenAT,            0 );
+    Cmd_CommandAdd( pAbc, "Various",      "genpop",        Abc_CommandGenPop,           0 );
     Cmd_CommandAdd( pAbc, "Various",      "genfsm",        Abc_CommandGenFsm,           0 );
     Cmd_CommandAdd( pAbc, "Various",      "cover",         Abc_CommandCover,            1 );
     Cmd_CommandAdd( pAbc, "Various",      "double",        Abc_CommandDouble,           1 );
@@ -11404,15 +11406,15 @@ usage:
 ***********************************************************************/
 int Abc_CommandTopoExact( Abc_Frame_t * pAbc, int argc, char ** argv )
 {
-    extern Abc_Ntk_t * Abc_NtkTopoExact( Abc_Ntk_t * pFunc, Abc_Ntk_t * pTopo, int nTimeOut, int nSeed, int fVerbose );
+    extern Abc_Ntk_t * Abc_NtkTopoExact( Abc_Ntk_t * pFunc, Abc_Ntk_t * pTopo, int nTimeOut, int nSeed, int fAndGates, int fVerbose );
     Abc_Ntk_t * pNtkRes = NULL;
     Abc_Ntk_t * pTopo = NULL;
     int nTimeOut = 0;    
     int nSeed = 0;
     char * pFileName = NULL;
-    int c, fVerbose = 0;
+    int c, fAndGates = 0, fVerbose = 0;
     Extra_UtilGetoptReset();
-    while ( ( c = Extra_UtilGetopt( argc, argv, "TSvh" ) ) != EOF )
+    while ( ( c = Extra_UtilGetopt( argc, argv, "TSavh" ) ) != EOF )
     {
         switch ( c )
         {
@@ -11437,6 +11439,9 @@ int Abc_CommandTopoExact( Abc_Frame_t * pAbc, int argc, char ** argv )
             globalUtilOptind++;
             if ( nSeed < 0 )
                 goto usage;
+            break;
+       case 'a':
+            fAndGates ^= 1;
             break;
        case 'v':
             fVerbose ^= 1;
@@ -11490,7 +11495,7 @@ int Abc_CommandTopoExact( Abc_Frame_t * pAbc, int argc, char ** argv )
     }
     pTopo = Abc_NtkDupDfs( pNtkRes = pTopo );
     Abc_NtkDelete( pNtkRes );
-    pNtkRes = Abc_NtkTopoExact( pAbc->pNtkCur, pTopo, nTimeOut, nSeed, fVerbose );
+    pNtkRes = Abc_NtkTopoExact( pAbc->pNtkCur, pTopo, nTimeOut, nSeed, fAndGates, fVerbose );
     Abc_NtkDelete( pTopo );
     if ( pNtkRes == NULL )
     {
@@ -11501,10 +11506,11 @@ int Abc_CommandTopoExact( Abc_Frame_t * pAbc, int argc, char ** argv )
     return 0;
 
 usage:
-    Abc_Print( -2, "usage: topoexact [-TS num] <file>\n" );
+    Abc_Print( -2, "usage: topoexact [-TS num] [-avh] <file>\n" );
     Abc_Print( -2, "\t           exact synthesis solution for the fixed topology\n" );
     Abc_Print( -2, "\t-T <num> : the runtime limit in seconds [default = %d]\n", nTimeOut );
     Abc_Print( -2, "\t-S <num> : the random seed to randomize the SAT solver [default = %d]\n", nSeed );
+    Abc_Print( -2, "\t-a       : toggle using only and-gates (not xor-gates) [default = %s]\n", fAndGates ? "yes" : "no" );
     Abc_Print( -2, "\t-v       : toggle verbose printout [default = %s]\n", fVerbose ? "yes" : "no" );
     Abc_Print( -2, "\t-h       : print the command usage\n" );
     Abc_Print( -2, "\t<file>   : BLIF file name with the topology\n" );
@@ -16028,6 +16034,81 @@ usage:
     Abc_Print( -2, "\t-v     : prints verbose information [default = %s]\n", fVerbose? "yes": "no" );
     Abc_Print( -2, "\t-h     : print the command usage\n");
     Abc_Print( -2, "\t<nums> : input counts by rank\n");
+    return 1;
+}
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+int Abc_CommandGenPop( Abc_Frame_t * pAbc, int argc, char ** argv )
+{
+    extern Abc_Ntk_t * Abc_NtkLutCascadeFromPopcountLuts( int nVars, int nLutSize, int fVerbose, char * pFileName );
+    char * pFileName = NULL;
+    Abc_Ntk_t * pNtk = NULL;
+    int c, nVars = 10, nLutSize = 6, fVerbose = 0;
+    Extra_UtilGetoptReset();
+    while ( ( c = Extra_UtilGetopt( argc, argv, "NKvh" ) ) != EOF )
+    {
+        switch ( c )
+        {
+        case 'N':
+            if ( globalUtilOptind >= argc )
+            {
+                Abc_Print( -1, "Command line switch \"-N\" should be followed by an integer.\n" );
+                goto usage;
+            }
+            nVars = atoi(argv[globalUtilOptind]);
+            globalUtilOptind++;
+            if ( nVars < 0 )
+                goto usage;
+            break;
+        case 'K':
+            if ( globalUtilOptind >= argc )
+            {
+                Abc_Print( -1, "Command line switch \"-K\" should be followed by an integer.\n" );
+                goto usage;
+            }
+            nLutSize = atoi(argv[globalUtilOptind]);
+            globalUtilOptind++;
+            if ( nLutSize < 0 )
+                goto usage;
+            break;
+        case 'v':
+            fVerbose ^= 1;
+            break;
+        case 'h':
+            goto usage;
+        default:
+            goto usage;
+        }
+    }
+    if ( argc == globalUtilOptind + 1 )
+        pFileName = argv[globalUtilOptind];
+    pNtk = Abc_NtkLutCascadeFromPopcountLuts( nVars, nLutSize, fVerbose, pFileName );
+    if ( pNtk == NULL )
+    {
+        fprintf( pAbc->Err, "Deriving the network has failed.\n" );
+        return 1;
+    }
+    Abc_FrameReplaceCurrentNetwork( pAbc, pNtk );
+    return 0;
+
+usage:
+    Abc_Print( -2, "usage: genpop [-NK num] [-vh] <file.v>\n" );
+    Abc_Print( -2, "\t            generates the adder tree\n" );
+    Abc_Print( -2, "\t-N <num>  : the number of support variables [default = %d]\n", nVars );
+    Abc_Print( -2, "\t-K <num>  : the number of LUT inputs [default = %d]\n", nLutSize );
+    Abc_Print( -2, "\t-v        : prints verbose information [default = %s]\n", fVerbose? "yes": "no" );
+    Abc_Print( -2, "\t-h        : print the command usage\n");
+    Abc_Print( -2, "\t-<file.v> : (optional) Verilog file name\n");
     return 1;
 }
 
